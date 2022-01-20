@@ -1,0 +1,22 @@
+{
+  "name": "tools",
+  "version": "1.0.0",
+  "bin": {
+    "tools": "./bin/index.js"
+  },
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^7.2.0",
+    "compare-versions": "^3.6.0",
+    "cross-spawn": "^7.0.3",
+    "inquirer": "^8.1.1",
+    "lodash": "^4.17.21",
+    "shelljs": "^0.8.4"
+  }
+}
