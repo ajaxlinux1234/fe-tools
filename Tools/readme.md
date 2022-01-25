@@ -22,18 +22,23 @@ Commands:
 
 ## 更新
 
+### 1.0.4 修改 readme
+
 ### 1.0.3 实现 tools cp 和命令参数缓存（上次传的参数，下次可省略）
 
 - 批量拷贝文件，并提交 commit
 - 如果是压缩文件 copy 到当前项目 -> 解压文件 -> 把文件 copy 到要 copy 的目录 -> 删除 zip 文件和解压之后的文件
-- 普通文件或者文件夹没有前两部
+- 普通文件或者文件夹没有前两步
+- tools cp --path D:\chromeDownload\download.zip --replace src\targetPath1\ public\plugin\targetFile1$pathFile --commit "chore: iconfont 内容替换"
 - .option('--path <string>', '压缩 zip 或者普通文件路径')
-- .option('--replace [string...]', '要替换的路径已经文件')
+- .option('--replace [string...]', '要替换的路径或文件 to$from')
 - .option('--commit [string]', 'git commit -m 时的描述内容')
 
 ### 1.0.2 实现 tools pr
 
 - 功能: gitlab 通过 api 提 pr
+- tools pr --target "http://test|master,dev,dev2" --token "testToken"
+- 在当前分支下把代码提到 master,dev,dev2 分支
 - 参数：
 - .description('Merge request')
 - .option('--token <string>', '用户 token')
