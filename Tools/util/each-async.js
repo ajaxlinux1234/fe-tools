@@ -8,6 +8,7 @@ module.exports = async function (asyncFns, time = 0) {
       await sleep(time);
       list.push(res);
     } catch (error) {
+      console.log(`eachAsync error:${error}`);
       list.push(error);
     }
   }

@@ -5,6 +5,8 @@ const log = require('../util/log');
 const axios = require('axios');
 const { get, isEmpty } = require('lodash');
 const eachAsync = require('../util/each-async');
+const store = require('../util/store');
+const prStoreKey = 'pr';
 /**
  *
  * @param {*} program
@@ -19,6 +21,8 @@ const eachAsync = require('../util/each-async');
  *  }
  *  url如果省略默认使用.git目录下的地址
  *  3.delete: 讀取pr.config.json中的iid請求接口進行close merge request 操作
+ *  4.pre: git pr 执行前的命令行
+ *  5.after: git pr执行后的命令行
  */
 module.exports = function (program) {
   program
@@ -37,12 +41,11 @@ module.exports = function (program) {
       const token = info.token || getPrConfig().token;
       const tipMsg = [
         [!token, 'user token is require'],
-        [target.length !== 2, 'target param is not correct'],
+        [get(target, 'length') !== 2, 'target param is not correct'],
       ];
       if (loopMsg(tipMsg) && !info.delete) {
         return;
       }
-
       const project = await getProject(token);
       if (info.delete && project.id) {
         return onDeleteMR({
@@ -57,21 +60,15 @@ module.exports = function (program) {
         target,
         token,
       });
-      fs.writeFileSync(
-        `${process.cwd()}/pr.config.json`,
-        JSON.stringify(
-          {
-            target: target,
-            token,
-            ...(list && { iid: list.map((i) => get(i, 'iid')) }),
-          },
-          null,
-          4
-        ), // 把merge request id存起來，刪除或者更新的時候用
-        'utf-8'
-      );
+      store.set(prStoreKey, {
+        target: target,
+        token,
+        ...(list && { iid: list.map((i) => get(i, 'iid')) }),
+      });
       (list || []).some((i) => get(i, 'iid')) &&
         log('Merge request was created successfully!');
+      // const users = await getUsers({ id: project.id, token });
+      // console.log(users);
     });
 };
 
@@ -97,11 +94,7 @@ function getPrInfo(param) {
 }
 
 function getPrConfig() {
-  try {
-    return require(`${process.cwd()}/pr.config.json`);
-  } catch (error) {
-    return {};
-  }
+  return store.get(prStoreKey);
 }
 
 // 下面代码为git mergeRequest相关方法
@@ -191,6 +184,14 @@ async function onDeleteMR(params) {
     return log(error);
   }
   log(`close merge request successfully!`);
+}
+
+async function getUsers({ id, token }) {
+  const res = await axios.get(
+    // `${getMRPath()}/projects/${id}/feature_flags_user_lists?private_token=${token}`
+    `${getMRPath()}/users?private_token=${token}`
+  );
+  return get(res, 'data', []);
 }
 
 // async function getMergeList({ id, token }) {
