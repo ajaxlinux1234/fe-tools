@@ -37,6 +37,7 @@ module.exports = function (program) {
             { silent: true }
           )
         : originPath.resolve(process.cwd(), path);
+
       const unzipName = isZip
         ? unzipInfo.stdout.match(/(?<=inflating: )([^/])*/)[0]
         : originPath.resolve(process.cwd(), getPathName(path).name);

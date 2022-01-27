@@ -1,12 +1,13 @@
 const fs = require('fs');
+const axios = require('axios');
+const { get, isEmpty } = require('lodash');
 const { getCurBranch } = require('../util/git-opts');
 const loopMsg = require('../util/loop-msg');
 const log = require('../util/log');
-const axios = require('axios');
-const { get, isEmpty } = require('lodash');
 const eachAsync = require('../util/each-async');
 const store = require('../util/store');
-const prStoreKey = 'pr';
+const shelljs = require('shelljs');
+const { prStoreKey } = require('../util/constants');
 /**
  *
  * @param {*} program
@@ -24,83 +25,102 @@ const prStoreKey = 'pr';
  *  4.pre: git pr 执行前的命令行
  *  5.after: git pr执行后的命令行
  */
-module.exports = function (program) {
-  program
-    .command('pr')
-    .description('Merge request')
-    .option('--token <string>', '用户token')
-    .option('--target <string>', '目标路径和分支')
-    .option('--delete', '刪除通過工具提的merge')
-    .action(async (info) => {
-      const target = !isEmpty(getPrInfo(info.target))
-        ? getPrInfo(info.target)
-        : getPrConfig().target;
-      const originUrl = getOriginUrl();
-      const originBranch = getCurBranch();
-      const origin = [originUrl, originBranch];
-      const token = info.token || getPrConfig().token;
-      const tipMsg = [
-        [!token, 'user token is require'],
-        [get(target, 'length') !== 2, 'target param is not correct'],
-      ];
-      if (loopMsg(tipMsg) && !info.delete) {
-        return;
-      }
-      const project = await getProject(token);
-      if (info.delete && project.id) {
-        return onDeleteMR({
-          id: project.id,
-          iid: getPrConfig().iid,
-          token,
+module.exports = function(program) {
+    program
+        .command('pr')
+        .description('Merge request')
+        .option('-T,--token <string>', '用户token')
+        .option('-L,--open-list', '')
+        .option('-TA,--target <string>', '目标路径和分支')
+        .option('-D,--delete', '刪除通過工具提的merge')
+        .option('-B,--before <string>', 'tools pr执行之前的钩子')
+        .option('-A,--after <string>', 'tools pr执行之后的钩子')
+        .action(async (info) => {
+            const before = info.before || getPrConfig().before;
+            before && shelljs.exec(before);
+            const target = !isEmpty(getPrInfo(info.target)) ?
+                getPrInfo(info.target) :
+                getPrConfig().target;
+            const originUrl = getOriginUrl();
+            const originBranch = getCurBranch();
+            const origin = [originUrl, originBranch];
+            const token = info.token || getPrConfig().token;
+            const tipMsg = [
+                [!token, 'user token is require'],
+                [get(target, 'length') !== 2, 'target param is not correct'],
+            ];
+            if (loopMsg(tipMsg) && !info.delete) {
+                return;
+            }
+            const project = await getProject(token);
+            if (info.openList) {
+                const list = await getMergeList({
+                    id: project.id,
+                    token,
+                })
+                console.log(list);
+                return;
+            }
+            if (info.delete && project.id && getPrConfig().iid) {
+                return onDeleteMR({
+                    id: project.id,
+                    iid: getPrConfig().iid,
+                    token,
+                });
+            }
+            const list = await createMR({
+                project,
+                origin,
+                target,
+                token,
+            });
+            if (!list) {
+                return;
+            }
+            (list || []).some((i) => get(i, 'iid')) &&
+                log('Merge request was created successfully!');
+            const after = info.after || getPrConfig().after;
+            await store.set(prStoreKey, {
+                target: target,
+                token,
+                ...(list && { iid: list.map((i) => get(i, 'iid')) }),
+                list,
+                before,
+                after,
+            });
+            after && shelljs.exec(after);
         });
-      }
-      const list = await createMR({
-        project,
-        origin,
-        target,
-        token,
-      });
-      store.set(prStoreKey, {
-        target: target,
-        token,
-        ...(list && { iid: list.map((i) => get(i, 'iid')) }),
-      });
-      (list || []).some((i) => get(i, 'iid')) &&
-        log('Merge request was created successfully!');
-      // const users = await getUsers({ id: project.id, token });
-      // console.log(users);
-    });
 };
 
 function getOriginUrl(str) {
-  const gitConfig = `${process.cwd()}/.git/config`;
-  if (!fs.existsSync(gitConfig)) {
-    throw new Error('.git/config not exist');
-  }
-  const gitInfo = fs.readFileSync(gitConfig, 'utf-8');
-  return (str || gitInfo).match(/(?<=url = )(.)*(?<=.git)/)[0];
+    const gitConfig = `${process.cwd()}/.git/config`;
+    if (!fs.existsSync(gitConfig)) {
+        throw new Error('.git/config not exist');
+    }
+    const gitInfo = fs.readFileSync(gitConfig, 'utf-8');
+    return (str || gitInfo).match(/(?<=url = )(.)*(?<=.git)/)[0];
 }
 
 function getLatestCommit() {
-  const commitFile = `${process.cwd()}/.git/COMMIT_EDITMSG`;
-  return fs.readFileSync(commitFile, 'utf-8').trim();
+    const commitFile = `${process.cwd()}/.git/COMMIT_EDITMSG`;
+    return fs.readFileSync(commitFile, 'utf-8').trim();
 }
 
 function getPrInfo(param) {
-  return (param || '')
-    .split('|')
-    .filter((i) => i.trim())
-    .map((i, m) => (m === 0 ? i : i.split(',')));
+    return (param || '')
+        .split('|')
+        .filter((i) => i.trim())
+        .map((i, m) => (m === 0 ? i : i.split(',')));
 }
 
 function getPrConfig() {
-  return store.get(prStoreKey);
+    return store.get(prStoreKey);
 }
 
 // 下面代码为git mergeRequest相关方法
 
 function getMRPath() {
-  return `${new URL(getOriginUrl()).origin}/api/v3`;
+    return `${new URL(getOriginUrl()).origin}/api/v3`;
 }
 
 /**
@@ -108,18 +128,18 @@ function getMRPath() {
  * @returns 从所有项目列表中获取当前项目的git信息
  */
 async function getProject(token) {
-  const MRpath = getMRPath();
-  try {
-    const res = await axios.get(`${MRpath}/projects?private_token=${token}`);
-    const list = get(res, 'data', []);
-    return list.find(
-      (i) =>
-        get(i, 'ssh_url_to_repo') === getOriginUrl() ||
-        get(i, 'http_url_to_repo') === getOriginUrl()
-    );
-  } catch (error) {
-    log(error);
-  }
+    const MRpath = getMRPath();
+    try {
+        const res = await axios.get(`${MRpath}/projects?private_token=${token}`);
+        const list = get(res, 'data', []);
+        return list.find(
+            (i) =>
+            get(i, 'ssh_url_to_repo') === getOriginUrl() ||
+            get(i, 'http_url_to_repo') === getOriginUrl()
+        );
+    } catch (error) {
+        log(error);
+    }
 }
 
 /**
@@ -127,80 +147,88 @@ async function getProject(token) {
  * @param {*} project 当前项目的git信息
  */
 async function createMR({ project, origin, target, token }) {
-  const { id } = project;
-  const branches = target[1];
-  try {
-    const list = await eachAsync(
-      branches.map(
-        (i) => async () =>
-          axios.post(`${getMRPath()}/projects/${id}/merge_requests`, {
-            private_token: token,
-            id,
-            source_branch: origin[1],
-            target_branch: i,
-            title: getLatestCommit(),
-          })
-      ),
-      500
-    );
-    return list.map((i) => ({
-      ...get(i, 'data', {}),
-      iid: get(i, 'data.id', ''),
-    }));
-  } catch (error) {
-    if (get(error, 'response.status') === 409) {
-      console.error('Don`t create merge requests repeatedly!');
-      return false;
+    const { id } = project;
+    const branches = target[1];
+    try {
+        const data = await eachAsync(
+            branches.map(
+                (i) => async () =>
+                    axios.post(`${getMRPath()}/projects/${id}/merge_requests`, {
+                        private_token: token,
+                        id,
+                        source_branch: origin[1],
+                        target_branch: i,
+                        title: getLatestCommit(),
+                    })
+            ),
+            500
+        );
+        if (!data) {
+            return data;
+        }
+        return data.map((i) => ({
+            ...get(i, 'data', {}),
+            iid: get(i, 'data.id', ''),
+        }));
+    } catch (error) {
+        if (get(error, 'response.status') === 409) {
+            console.error('Don`t create merge requests repeatedly!');
+            return false;
+        }
+        return log(error);
     }
-    return log(error);
-  }
 }
 
 async function deleteMR({ id, iid, token }) {
-  return eachAsync(
-    iid.map(
-      (i) => async () =>
-        axios.delete(
-          `${getMRPath()}/projects/${id}/merge_requests/${i}?private_token=${token}`,
-          {
-            private_token: token,
-            id,
-            merge_request_iid: i,
-          }
-        )
-    ),
-    500
-  );
+    return eachAsync(
+        iid.map(
+            (i) => async () =>
+                axios.delete(
+                    `${getMRPath()}/projects/${id}/merge_requests/${i}?private_token=${token}`, {
+                        private_token: token,
+                        id,
+                        merge_request_iid: i,
+                    }
+                )
+        ),
+        500
+    );
 }
 
 async function onDeleteMR(params) {
-  try {
-    await deleteMR(params);
-  } catch (error) {
-    if (get(error, 'response.status') === 404) {
-      console.error('Don`t close merge requests repeatedly!');
-      return false;
+    try {
+        const res = await deleteMR(params);
+        if (res) {
+            store.set(prStoreKey, {
+                ...store.get(prStoreKey),
+                iid: null
+            })
+            log(`close merge request successfully!`);
+        }
+    } catch (error) {
+        if (get(error, 'response.status') === 404) {
+            console.error('Don`t close merge requests repeatedly!');
+            return false;
+        }
+        return log(error);
     }
-    return log(error);
-  }
-  log(`close merge request successfully!`);
 }
 
 async function getUsers({ id, token }) {
-  const res = await axios.get(
-    // `${getMRPath()}/projects/${id}/feature_flags_user_lists?private_token=${token}`
-    `${getMRPath()}/users?private_token=${token}`
-  );
-  return get(res, 'data', []);
+    const res = await axios.get(
+        // `${getMRPath()}/projects/${id}/feature_flags_user_lists?private_token=${token}`
+        `${getMRPath()}/users?private_token=${token}`
+    );
+    return get(res, 'data', []);
 }
 
-// async function getMergeList({ id, token }) {
-//   return axios
-//     .get(
-//       `${getMRPath()}/projects/${id}/merge_requests?state=opened&&private_token=${token}`
-//     )
-//     .then((res) => get(res, 'data', []));
-// }
+async function getMergeList({ id, token }) {
+    return axios
+        .get(
+            `${getMRPath()}/projects/${id}/merge_requests?state=opened&&private_token=${token}`
+        )
+        .then((res) => get(res, 'data', []));
+}
 
 // async function updateMR({
 //   id

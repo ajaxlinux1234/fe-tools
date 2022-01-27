@@ -1,25 +1,26 @@
 {
-  "name": "@ajaxlinux/tools",
-  "version": "1.0.4",
-  "bin": {
-    "tools": "./bin/index.js"
-  },
-  "description": "前端tools",
-  "homepage": "https://registry.npmjs.org/@ajaxlinux/tools",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^0.25.0",
-    "commander": "^7.2.0",
-    "compare-versions": "^3.6.0",
-    "cross-spawn": "^7.0.3",
-    "inquirer": "^8.1.1",
-    "lodash": "^4.17.21",
-    "moment": "^2.29.1",
-    "shelljs": "^0.8.4"
-  }
+    "name": "@ajaxlinux/tools",
+    "version": "1.0.5",
+    "bin": {
+        "tools": "./bin/index.js"
+    },
+    "description": "前端tools",
+    "homepage": "https://registry.npmjs.org/@ajaxlinux/tools",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "axios": "^0.25.0",
+        "commander": "^7.2.0",
+        "compare-versions": "^3.6.0",
+        "cross-spawn": "^7.0.3",
+        "inquirer": "^8.1.1",
+        "lodash": "^4.17.21",
+        "moment": "^2.29.1",
+        "shelljs": "^0.8.4",
+        "standard-version": "^9.3.2"
+    }
 }
