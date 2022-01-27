@@ -4,6 +4,16 @@
     "bin": {
         "tools": "./bin/index.js"
     },
+    "Keywords": [
+        "tools",
+        "pr",
+        "merge request",
+        "cp",
+        "copy",
+        "feishu",
+        "bot",
+        "git commit"
+    ],
     "description": "前端tools",
     "homepage": "https://registry.npmjs.org/@ajaxlinux/tools",
     "main": "index.js",
