@@ -13,10 +13,7 @@ const { get } = require('lodash');
 module.exports = function(program) {
     program
         .command('feishu')
-        .description('飞书开发者文档相关操作')
-        .option('--create', '飞书文档创建相关参数')
-        .option('--update', '飞书文档更新相关参数')
-        .option('--delete', '飞书文档删除相关参数')
+        .description('飞书相关操作')
         .option('--webhook <string>', '根据git pr的内容，向传入的group bot发消息')
         .action(async (info) => {
             const { webhook } = info;

@@ -13,6 +13,8 @@ Options:
   -h, --help                display help for command
 
 Commands:
+  git-commit-info           项目中生成version.txt
+  feishu                    飞书相关操作
   cp                        文件批量替换功能
   pr                        提pr功能
   version                   应用版本
@@ -21,6 +23,28 @@ Commands:
 ```
 
 ## 更新
+
+### 1.0.5
+
+#### 修改 tools pr
+
+- .description('Merge request')
+- .option('-T,--token <string>', '用户 token')
+- .option('-L,--open-list', '')
+- .option('-TA,--target <string>', '目标路径和分支')
+- .option('-D,--delete', '刪除通過工具提的 merge')
+- .option('-B,--before <string>', 'tools pr 执行之前的钩子')
+- .option('-A,--after <string>', 'tools pr 执行之后的钩子')
+
+#### 增加 tools feishu 在 git pr 之后把消息推送到飞书群组中
+
+- .description('飞书相关操作')
+- .option('--webhook <string>', '根据 git pr 的内容，向传入的 group bot 发消息')
+
+#### 增加 tools git-commit-info
+
+- .description('生成 git 最近的 commitId 和时间到文件中')
+- .option('--folder [string]', '存放 version.txt 的路径', path.resolve(process.cwd(), 'dist', 'version.txt'))
 
 ### 1.0.4 修改 readme
 
