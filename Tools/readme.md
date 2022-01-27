@@ -1,86 +1,90 @@
-# 前端工具：简化操作，质量检测
+# Front-end tools: simplify operation, quality inspection
 
-# 安装
+# Install
 
 npm install -g @ajaxlinux/tools
 
-## 使用
+## use
 
 ```
 Usage: tools [options] [command]
 
 Options:
-  -h, --help                display help for command
+  -h, --help display help for command
 
 Commands:
-  git-commit-info           项目中生成version.txt
-  feishu                    飞书相关操作
-  cp                        文件批量替换功能
-  pr                        提pr功能
-  version                   应用版本
-  update                    升级应用
-  help [command]            display help for command
+  Generate version.txt in the git-commit-info project
+  feishu Feishu related operations
+  cp file batch replacement function
+  pr mention pr function
+  version app version
+  update update the application
+  help [command] display help for command
 ```
 
-## 更新
+## Renew
+
+### 1.0.8
+
+change readme language
 
 ### 1.0.7
 
-修改工具标题
+Modify tool title
 
 ### 1.0.6
 
-package.json 增加 keywords
+package.json adds keywords
 
 ### 1.0.5
 
-#### 修改 tools pr
+#### Modify tools pr
 
 - .description('Merge request')
-- .option('-T,--token <string>', '用户 token')
+- .option('-T,--token <string>', 'user token')
 - .option('-L,--open-list', '')
-- .option('-TA,--target <string>', '目标路径和分支')
-- .option('-D,--delete', '刪除通過工具提的 merge')
-- .option('-B,--before <string>', 'tools pr 执行之前的钩子')
-- .option('-A,--after <string>', 'tools pr 执行之后的钩子')
+- .option('-TA,--target <string>', 'target path and branch')
+- .option('-D,--delete', 'delete merge through tool mention')
+- .option('-B,--before <string>', 'tools pr hook before execution')
+- .option('-A,--after <string>', 'tools pr hook after execution')
 
-#### 增加 tools feishu 在 git pr 之后把消息推送到飞书群组中
+#### tools feishu to push messages to Feishu app group after git pr
 
-- .description('飞书相关操作')
-- .option('--webhook <string>', '根据 git pr 的内容，向传入的 group bot 发消息')
+- .description('Feishu related operations')
+- .option('--webhook <string>', 'Send a message to the incoming group bot according to the content of git pr')
 
-#### 增加 tools git-commit-info
+#### tools git-commit-info
 
-- .description('生成 git 最近的 commitId 和时间到文件中')
-- .option('--folder [string]', '存放 version.txt 的路径', path.resolve(process.cwd(), 'dist', 'version.txt'))
+- .description('Generate git's most recent commitId and time to the file')
+- .option('--folder [string]', 'The path to store version.txt', path.resolve(process.cwd(), 'dist', 'version.txt'))
 
-### 1.0.4 修改 readme
+### 1.0.4 Modify readme
 
-### 1.0.3 实现 tools cp 和命令参数缓存（上次传的参数，下次可省略）
+### 1.0.3 tools cp (command parameter cache)
 
-- 批量拷贝文件，并提交 commit
-- 如果是压缩文件 copy 到当前项目 -> 解压文件 -> 把文件 copy 到要 copy 的目录 -> 删除 zip 文件和解压之后的文件
-- 普通文件或者文件夹没有前两步
-- tools cp --path D:\chromeDownload\download.zip --replace src\targetPath1\ public\plugin\targetFile1$pathFile --commit "chore: iconfont 内容替换"
-- .option('--path <string>', '压缩 zip 或者普通文件路径')
-- .option('--replace [string...]', '要替换的路径或文件 to$from')
-- .option('--commit [string]', 'git commit -m 时的描述内容')
+- Batch copy files and submit commit
+- If it is a compressed file copy to the current project -> decompress the file -> copy the file to the directory to be copied -> delete the zip file and the decompressed file
+- Ordinary files or folders do not have the first two steps
+- tools cp --path D:\chromeDownload\download.zip --replace src\targetPath1\ public\plugin\targetFile1$pathFile --commit "chore: iconfont content replacement"
+- .option('--path <string>', 'compressed zip or normal file path')
+- .option('--replace [string...]', 'path or file to replace to$from')
+- .option('--commit [string]', 'Description when git commit -m')
 
-### 1.0.2 实现 tools pr
+### 1.0.2 tools pr
 
-- 功能: gitlab 通过 api 提 pr
+- Function: gitlab provides pr via api
 - tools pr --target "http://test|master,dev,dev2" --token "testToken"
-- 在当前分支下把代码提到 master,dev,dev2 分支
-- 参数：
+- Bring the code to the master, dev, dev2 branches under the current branch
+- Parameters:
 - .description('Merge request')
-- .option('--token <string>', '用户 token')
-- .option('--target <string>', '目标路径和分支')
-- .option('--delete', '刪除通過工具提的 merge')
+- .option('--token <string>', 'user token')
+- .option('--target <string>', 'target path and branch')
+- .option('--delete', 'Delete merge through tool mention')
 
 ### 1.0.1
 
-修改包名称
+Modify package name
 
 ### 1.0.0
 
-初始化
+initialization

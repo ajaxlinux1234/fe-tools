@@ -1,9 +1,9 @@
-module.exports = function (program) {
-  program
-    .command('version')
-    .description('应用版本')
-    .action(async () => {
-      const version = require('../util/version').getLocalVersion();
-      console.log(`应用版本:${version}`);
-    });
+module.exports = function(program) {
+    program
+        .command('version')
+        .description('app version')
+        .action(async () => {
+            const version = require('../util/version').getLocalVersion();
+            console.log(`app version:${version}`);
+        });
 };

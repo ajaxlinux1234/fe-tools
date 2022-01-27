@@ -5,16 +5,16 @@ const { getNameSpace } = require("../util/util");
 const { get } = require('lodash');
 
 /**
- * 飞书相关操作
- * 可以在git pr --after钩子函数调用，
- * 在git pr操作完成后用于创建或者更新飞书文档
+ * Feishu related operations
+ * Can be called in the git pr --after hook function,
+ * Used to create or update Feishu documents after the git pr operation is completed
  * @param {*} program
  */
 module.exports = function(program) {
     program
         .command('feishu')
-        .description('飞书相关操作')
-        .option('--webhook <string>', '根据git pr的内容，向传入的group bot发消息')
+        .description('Feishu related operations')
+        .option('--webhook <string>', 'Send a message to the incoming group bot based on the contents of git pr')
         .action(async (info) => {
             const { webhook } = info;
             if (webhook) {

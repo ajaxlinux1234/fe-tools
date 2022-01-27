@@ -5,8 +5,8 @@ const shelljs = require('shelljs');
 module.exports = function(program) {
     program
         .command('git-commit-info')
-        .description('生成git最近的commitId和时间到文件中')
-        .option('--folder [string]', '存放version.txt的路径', path.resolve(process.cwd(), 'dist', 'version.txt'))
+        .description("Generate git's most recent commitId and time into the file")
+        .option('--folder [string]', 'The path to store version.txt', path.resolve(process.cwd(), 'dist', 'version.txt'))
         .action(async (info) => {
             const { folder: vPath } = info;
             if (!fs.existsSync(vPath)) {

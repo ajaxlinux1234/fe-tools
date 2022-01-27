@@ -1,6 +1,6 @@
 {
     "name": "@ajaxlinux/tools",
-    "version": "1.0.7",
+    "version": null,
     "bin": {
         "tools": "./bin/index.js"
     },
@@ -14,7 +14,7 @@
         "bot",
         "git commit"
     ],
-    "description": "前端tools",
+    "description": "Front-end tools",
     "homepage": "https://registry.npmjs.org/@ajaxlinux/tools",
     "main": "index.js",
     "scripts": {

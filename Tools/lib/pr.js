@@ -11,30 +11,30 @@ const { prStoreKey } = require('../util/constants');
 /**
  *
  * @param {*} program
- * 功能: gitlab通过api提pr
- * 参数：
- *  1.token: private_token请求接口的时候使用
- *  2.target: 当前项目.git目录下的target地址|对应的分支
- *  第一次设置完之后会把这个信息写到pr.config.json中，
- *  之后默认从pr.config.json中读取这两个信息。
- *  json的形式为{
- *    "target": `${url}|${branch1},${branch2}`
- *  }
- *  url如果省略默认使用.git目录下的地址
- *  3.delete: 讀取pr.config.json中的iid請求接口進行close merge request 操作
- *  4.pre: git pr 执行前的命令行
- *  5.after: git pr执行后的命令行
+ * Function: gitlab provides pr through api
+ * Parameters:
+ * 1.token: private_token is used when requesting the interface
+ * 2.target: target address in the .git directory of the current project | corresponding branch
+ * After the first setting, this information will be written to pr.config.json,
+ * After that, these two information are read from pr.config.json by default.
+ * The form of json is {
+ * "target": `${url}|${branch1},${branch2}`
+ * }
+ * If url is omitted, the address in the .git directory is used by default
+ * 3.delete: Read the iid request interface in pr.config.json for close merge request operation
+ * 4.pre: the command line before git pr is executed
+ * 5.after: command line after git pr is executed
  */
 module.exports = function(program) {
     program
         .command('pr')
         .description('Merge request')
-        .option('-T,--token <string>', '用户token')
+        .option('-T,--token <string>', 'user token')
         .option('-L,--open-list', '')
-        .option('-TA,--target <string>', '目标路径和分支')
-        .option('-D,--delete', '刪除通過工具提的merge')
-        .option('-B,--before <string>', 'tools pr执行之前的钩子')
-        .option('-A,--after <string>', 'tools pr执行之后的钩子')
+        .option('-TA,--target <string>', 'target paths and branches')
+        .option('-D,--delete', 'Delete merge through tool mention')
+        .option('-B,--before <string>', 'tools pr hook before execution')
+        .option('-A,--after <string>', 'tools pr hook after execution')
         .action(async (info) => {
             const before = info.before || getPrConfig().before;
             before && shelljs.exec(before);
@@ -117,7 +117,7 @@ function getPrConfig() {
     return store.get(prStoreKey);
 }
 
-// 下面代码为git mergeRequest相关方法
+// The following code is the related method of git mergeRequest
 
 function getMRPath() {
     return `${new URL(getOriginUrl()).origin}/api/v3`;
@@ -125,7 +125,7 @@ function getMRPath() {
 
 /**
  *
- * @returns 从所有项目列表中获取当前项目的git信息
+ * @returns Get git info of current project from list of all projects
  */
 async function getProject(token) {
     const MRpath = getMRPath();
@@ -144,7 +144,7 @@ async function getProject(token) {
 
 /**
  * 提pr
- * @param {*} project 当前项目的git信息
+ * @param {*} project git information for the current project
  */
 async function createMR({ project, origin, target, token }) {
     const { id } = project;
