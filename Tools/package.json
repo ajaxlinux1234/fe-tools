@@ -1,6 +1,6 @@
 {
     "name": "@ajaxlinux/tools",
-    "version": "1.0.8",
+    "version": null,
     "bin": {
         "tools": "./bin/index.js"
     },

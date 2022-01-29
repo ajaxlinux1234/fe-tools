@@ -58,7 +58,6 @@ module.exports = function(program) {
                     id: project.id,
                     token,
                 })
-                console.log(list);
                 return;
             }
             if (info.delete && project.id && getPrConfig().iid) {

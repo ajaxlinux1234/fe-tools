@@ -9,5 +9,6 @@ require('../lib/pr')(program);
 require('../lib/feishu')(program);
 require('../lib/cp')(program);
 require('../lib/git-commit-info')(program);
+require('../lib/check-ctx')(program);
 
 program.parse(process.argv);
