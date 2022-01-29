@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-##  (2022-01-29)
+### 1.0.9 (2022-01-29)
 
 
 ### Features
@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file. See [standa
 * tools feishu; tools git-commit-info ([cee18a7](https://github.com/ajaxlinux1234/fe-tools/commit/cee18a7d1c75e698f4b932b28f942240701317bc))
 * tools pr ([5f3ce49](https://github.com/ajaxlinux1234/fe-tools/commit/5f3ce4930106880a13aed862cc8d11ec522067fe))
 * **tools:** tools cp ([5b3c1ca](https://github.com/ajaxlinux1234/fe-tools/commit/5b3c1ca94e50d5b33acb6a2d4ba438f9ddc37412))
+* 增加check-ctx检测keywords ([8dd4fd8](https://github.com/ajaxlinux1234/fe-tools/commit/8dd4fd81f836d9c976b9d2d3841598ee0cbd685b))
 
 
 ### Bug Fixes
