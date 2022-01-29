@@ -24,6 +24,19 @@ Commands:
 
 ## Renew
 
+### 1.0.9
+
+#### tools check-ctx
+
+- check keywords in send folder path
+- return keyword file path
+
+* .command('check-ctx')
+* .description('get keywords file path')
+* .option('-P,--path [string]', 'folder path', process.cwd())
+* .option('-K,--keywords [string...]', 'keywords string or Regex', [])
+* .option('-I,--ignore-path [string]', 'Traverse file ignored paths')
+
 ### 1.0.8
 
 change readme language
