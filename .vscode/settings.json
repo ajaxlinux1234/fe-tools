@@ -6,12 +6,7 @@
     "typescriptreact",
     "vue"
   ],
-  "stylelint.validate": [
-    "css",
-    "scss",
-    "less",
-    "acss"
-  ],
+  "stylelint.validate": ["css", "scss", "less", "acss"],
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true,
     "source.fixAll.stylelint": true,
@@ -19,7 +14,8 @@
   },
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "cSpell.words": [
-    "privatebuild"
-  ]
+  "cSpell.words": ["privatebuild"],
+  "[javascript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  }
 }

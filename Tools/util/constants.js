@@ -1,3 +1,3 @@
 module.exports = {
-    prStoreKey: 'pr'
+  prStoreKey: 'pr'
 }

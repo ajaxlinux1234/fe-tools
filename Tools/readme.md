@@ -24,6 +24,12 @@ Commands:
 
 ## Renew
 
+### 1.1.0
+
+#### tools init
+
+init vue2, vue3, react umi project with f2elint and webpack config
+
 ### 1.0.9
 
 #### tools check-ctx
