@@ -15,7 +15,7 @@ module.exports = (program) => {
     .option('-K,--keywords [string...]', 'keywords string or Regex', [])
     .option('-I,--ignore-path [string]', 'Traverse file ignored paths')
     .action(async (info) => {
-      const { keywords, path, ignorePath, vague } = info;
+      const { keywords, path, ignorePath } = info;
       const msg = [
         [isEmpty(keywords), 'keywords param is need'],
         [

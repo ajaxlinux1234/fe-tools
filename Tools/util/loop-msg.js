@@ -1,4 +1,5 @@
 const { isEmpty } = require('lodash');
+const { logError } = require('./color-log');
 /**
  *
  * @param {*} param Array([[cond, msg]])
@@ -19,6 +20,6 @@ module.exports = function (param, isErr) {
   if (isErr) {
     throw new Error(msgJoin);
   }
-  console.log(msgJoin);
+  logError(msgJoin);
   return !!msgJoin;
 };

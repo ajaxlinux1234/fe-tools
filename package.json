@@ -10,5 +10,6 @@
     "type": "git"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {}
 }

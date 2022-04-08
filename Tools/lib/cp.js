@@ -18,9 +18,9 @@ module.exports = function (program) {
   program
     .command('cp')
     .description('File replacement')
-    .option('--path <string>', 'compression icon zip path')
-    .option('--replace [string...]', 'The path to replace is already a file')
-    .option('--commit [string]', 'Description when git commit -m')
+    .option('-C, --commit [string]', 'Description when git commit -m')
+    .option('-P, --path <string>', 'compression icon zip path')
+    .option('-R, --replace [string...]', 'The path to replace is already a file')
     .action(async (info) => {
       const path = info.path || store.get('cp').path || process.cwd();
       const replace = info.replace || store.get('cp').replace;

@@ -6,6 +6,18 @@ function getCurBranch() {
     .stdout.trim();
 }
 
+function hasRemote(branch) {
+  return shelljs
+    .exec('git branch --remote', { silent: true })
+    .stdout.includes(branch);
+}
+
+function createRemote(branch) {
+  return shelljs.exec(`git push origin ${branch}`, { silent: true });
+}
+
 module.exports = {
   getCurBranch,
+  hasRemote,
+  createRemote,
 };

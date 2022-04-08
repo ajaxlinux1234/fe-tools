@@ -3,7 +3,7 @@ const axios = require('axios');
 const { get, isEmpty } = require('lodash');
 const { getCurBranch } = require('../util/git-opts');
 const loopMsg = require('../util/loop-msg');
-const log = require('../util/log');
+const { logSuccess, logError } = require('../util/color-log');
 const eachAsync = require('../util/each-async');
 const store = require('../util/store');
 const shelljs = require('shelljs');
@@ -35,6 +35,7 @@ module.exports = function (program) {
     .option('-D,--delete', 'Delete merge through tool mention')
     .option('-B,--before <string>', 'tools pr hook before execution')
     .option('-A,--after <string>', 'tools pr hook after execution')
+    .option('-ASS,--assignee <number>', 'pr assignee people id')
     .action(async (info) => {
       const before = info.before || getPrConfig().before;
       before && shelljs.exec(before);
@@ -45,6 +46,7 @@ module.exports = function (program) {
       const originBranch = getCurBranch();
       const origin = [originUrl, originBranch];
       const token = info.token || getPrConfig().token;
+      const assignee = info.assignee || getPrConfig().assignee;
       const tipMsg = [
         [!token, 'user token is require'],
         [get(target, 'length') !== 2, 'target param is not correct'],
@@ -72,18 +74,20 @@ module.exports = function (program) {
         origin,
         target,
         token,
+        assignee,
       });
       if (!list) {
         return;
       }
       (list || []).some((i) => get(i, 'iid')) &&
-        log('Merge request was created successfully!');
+        logSuccess('Merge request was created successfully!');
       const after = info.after || getPrConfig().after;
       await store.set(prStoreKey, {
         target: target,
         token,
         ...(list && { iid: list.map((i) => get(i, 'iid')) }),
         list,
+        assignee,
         before,
         after,
       });
@@ -137,7 +141,7 @@ async function getProject(token) {
         get(i, 'http_url_to_repo') === getOriginUrl()
     );
   } catch (error) {
-    log(error);
+    logError(error);
   }
 }
 
@@ -145,20 +149,33 @@ async function getProject(token) {
  * 提pr
  * @param {*} project git information for the current project
  */
-async function createMR({ project, origin, target, token }) {
+async function createMR({ project, origin, target, token, assignee }) {
   const { id } = project;
   const branches = target[1];
   try {
     const data = await eachAsync(
       branches.map(
-        (i) => async () =>
-          axios.post(`${getMRPath()}/projects/${id}/merge_requests`, {
+        (i) => async () => {
+          const res = await axios.post(`${getMRPath()}/projects/${id}/merge_requests`, {
             private_token: token,
             id,
             source_branch: origin[1],
             target_branch: i,
             title: getLatestCommit(),
+            assignee_id: assignee
           })
+          const iid = get(res, 'data.id', '')
+          try {
+            await checkConflict({
+              iid,
+              id,
+              token
+            })
+          } catch (error) {
+            error.response.status === 406 && logError('conflicts')
+          }
+          return res
+        }
       ),
       500
     );
@@ -174,7 +191,7 @@ async function createMR({ project, origin, target, token }) {
       console.error('Don`t create merge requests repeatedly!');
       return false;
     }
-    return log(error);
+    return logError(error);
   }
 }
 
@@ -202,14 +219,14 @@ async function onDeleteMR(params) {
         ...store.get(prStoreKey),
         iid: null
       })
-      log(`close merge request successfully!`);
+      logSuccess(`close merge request successfully!`);
     }
   } catch (error) {
     if (get(error, 'response.status') === 404) {
       console.error('Don`t close merge requests repeatedly!');
       return false;
     }
-    return log(error);
+    return logError(error);
   }
 }
 
@@ -229,8 +246,6 @@ async function getMergeList({ id, token }) {
     .then((res) => get(res, 'data', []));
 }
 
-// async function updateMR({
-//   id
-// }) {
-//   await axios.put(`/projects/${id}/merge_requests/:merge_request_iid`)
-// }
+async function checkConflict({ id, iid, token }) {
+  return axios.put(`${getMRPath()}/projects/${id}/merge_requests/${iid}/merge?private_token=${token}`)
+}

@@ -2,7 +2,9 @@ const fs = require('fs');
 const { last } = require('lodash');
 const path = require('path');
 const { isWin } = require('./util');
-async function createFile(pathStr) {
+const shelljs = require('shelljs');
+async function createFile(str) {
+  const pathStr = String(str);
   return new Promise((resolve) =>
     fs.access(pathStr, fs.F_OK, (err) => {
       if (err) {
@@ -10,7 +12,7 @@ async function createFile(pathStr) {
         const isFile = !!path.extname(name);
         if (isFile) {
           dir && fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(name, null, 'utf-8');
+          fs.writeFileSync(path.resolve(dir, name), JSON.stringify({}), 'utf-8');
         } else {
           fs.mkdirSync(pathStr, { recursive: true });
         }
