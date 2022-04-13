@@ -69,6 +69,7 @@ module.exports = function (program) {
           token,
         });
       }
+      shelljs.exec(`git push origin ${originBranch}`)
       const list = await createMR({
         project,
         origin,
