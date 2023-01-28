@@ -14,7 +14,13 @@
   },
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "cSpell.words": ["privatebuild"],
+  "cSpell.words": [
+    "Angelababy",
+    "feishu",
+    "privatebuild",
+    "tencentcloud",
+    "tencentcloudapi"
+  ],
   "[javascript]": {
     "editor.defaultFormatter": "vscode.typescript-language-features"
   }

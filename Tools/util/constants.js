@@ -10,5 +10,7 @@ module.exports = {
   prStoreKey: 'pr',
   GLOBAL: 'global',
   PIPE: 'pipe',
+  TRANSLATE: 'translate',
+  RULE_JSON: 'rule.js',
   cachePath,
 }

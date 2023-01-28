@@ -1,8 +1,5 @@
 
 const { cachePath } = require('../util/constants');
-// const iExec = require('../util/i-exec');
-// const log = require('../util/log');
-// const shelljs = require('shelljs')
 const fs = require('fs')
 const { get } = require('lodash')
 /**

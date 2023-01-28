@@ -2,7 +2,11 @@
 
 'use strict';
 const program = require('commander');
+const { initCache } = require('../util/util');
 
+initCache()
+
+require('../lib/rule-check')(program);
 require('../lib/check-ctx')(program);
 require('../lib/cp')(program);
 require('../lib/debug')(program);
@@ -15,4 +19,6 @@ require('../lib/pr')(program);
 require('../lib/setRAM')(program);
 require('../lib/update')(program);
 require('../lib/version')(program);
+// require('../lib/music/index')(program);
+require('../lib/translate')(program);
 program.parse(process.argv);
