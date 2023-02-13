@@ -1,5 +1,6 @@
 const { isEmpty, get, flattenDepth } = require('lodash')
 const { isUnaryTag, removeQuotes, isNotEmpty, isBoolean } = require('./utils')
+const onCopy = require('../../util/on-copy')
 const { DIRECTIVES, TYPE, onReg, preserveBindingReg, customPropertyReg, emptyBaseNodeAttr } = require('./constants')
 
 class TemplateGenerator {
@@ -35,11 +36,9 @@ class TemplateGenerator {
 
   genIfConditions(node) {
     node.ifConditionsHasGenerated = true
-
     if (!node.ifConditions) {
       return ''
     }
-
     return node.ifConditions
       .map(item => {
         const { block } = item
@@ -76,9 +75,13 @@ class TemplateGenerator {
       this.genKey(node),
       this.genIs(node),
       this.genRef(node),
-      this.genSlot(node)
+      this.genSlot(node),
+      this.genBind(node)
     ]
     const originProps = [...directives, ...attrs].filter(Boolean)
+    if (originProps.some(i => i.includes('only'))) {
+      onCopy(node)
+    }
     const propsMap = {
       '0': 'genVIf',
       '1': 'genVFor',
@@ -98,9 +101,10 @@ class TemplateGenerator {
       '15': 'genIs',
       '16': 'genRef',
       '17': 'genSlot',
+      '18': 'genBind'
     }
-    const typeMap = Object.fromEntries([...directives, ...attrs].map((i, m) => [propsMap[m], i]))
-    node.propsTypeMap = typeMap
+    // const typeMap = Object.fromEntries([...directives, ...attrs].map((i, m) => [propsMap[m], i]))
+    // node.propsTypeMap = typeMap
     const props = this.sortProps(originProps, node.attrsMap)
     const startTag = `<${[tag, ...props]
       .filter(isNotEmpty)
@@ -110,13 +114,8 @@ class TemplateGenerator {
     return [startTag, childrenNodes, endTag].join('')
   }
 
-  // getNewProps(props, typeMap) {
-  //   return flattenDepth(props.map(i => typeMap['genAttrs'] === i ? i.split(' ') : i))
-  // }
-
   removeKey(name) {
     return name
-    return name.replace(':', '')
   }
 
   sortProps(props, attrsMap) {
@@ -128,12 +127,18 @@ class TemplateGenerator {
     if (!node) {
       return ''
     }
+    onCopy(node)
     const slotChildren = Object.values(node.scopedSlots || {})
       .map(i => ({
         ...i,
         attrs: Object.entries(i.attrsMap || {}).map(([name, value]) => ({ name, value })),
       }))
+    const vElseObj = get(node, 'ifConditions.[1].block') ? get(node, 'ifConditions.[1].block') : {}
     const cmpChild = [...get(node, 'children', []), ...slotChildren]
+    if (!isEmpty(vElseObj)) {
+      delete node.ifConditions
+      node.parent.children.push(vElseObj)
+    }
     if (!cmpChild.length) {
       return ''
     }
@@ -202,7 +207,25 @@ class TemplateGenerator {
 
         const matched = attr.match(customPropertyReg)
         if (matched) {
-          return `${matched[0]}="${attrsMap[attr]}"`
+          return `${matched[0]}=${attrsMap[attr]}`
+        }
+        return ''
+      })
+      .filter(isNotEmpty)
+      .join(' ')
+  }
+  /**
+   * 提取v-bind属性
+   * @param {*} node 
+   * @returns 
+   */
+  genBind(node) {
+    const { attrsMap = {} } = node
+    return Object.keys(attrsMap)
+      .map(attr => {
+        const val = (attrsMap[attr] || '').replace(/"'/g, '')
+        if (attr === 'v-bind') {
+          return `${attr}='${val}'`
         }
         return ''
       })

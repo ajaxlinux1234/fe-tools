@@ -1,6 +1,8 @@
 const fs = require('fs')
 const path = require('path')
 
+const shelljs = require('shelljs')
+
 const tencentcloud = require("tencentcloud-sdk-nodejs");
 const TmtClient = tencentcloud.tmt.v20180321.Client;
 
@@ -8,60 +10,43 @@ const parser = require("@babel/parser");
 const { default: traverse } = require("@babel/traverse");
 const { default: generate } = require("@babel/generator");
 const compiler = require("@vue/compiler-sfc")
-const { format } = require('prettier')
-const { isEmpty, pick } = require('lodash')
+const { pick, isEmpty } = require('lodash')
 
 const log = require('../util/log');
-const { logError } = require('../util/color-log');
+const { logError, logSuccess } = require('../util/color-log');
 const asyncReadDir = require("../util/async-read-dir");
 const store = require('../util/store');
 const { TRANSLATE } = require('../util/constants');
 const TemplateGenerator = require('../util/vue-transform/index');
 
-const { removeQuotes, isNotEmpty } = require('../util/vue-transform/utils')
+const { removeQuotes, isNotEmpty } = require('../util/vue-transform/utils');
+const onCopy = require('../util/on-copy');
+const { sleep } = require('../util/util');
 
 const zhReg = /[\u4E00-\u9FA5]+/g
 
-const tplCNPattern = /(\<\!--)?(='")?(="')?(\s*)?[\u4E00-\u9FA5]+('+)?(\s*)?(-->)?/g
-const tplCommentStart = '\x3C!--' // template注释标识符
-const tplCommentEnd = '-->'
-const inlineZHChart = `="'` // 标签内容中文
-const inlineZHChart2 = `='"` // 标签内容中文
-
-const jsCNPattern = /((\/)?(\/)?(\s*)?)?(\*\s)?('+)?("+)?[\u4E00-\u9FA5]+("+)?('+)?/g;
-const jsTransPattern = /(\/\/(.*)?)?(\*\s)?[\u4E00-\u9FA5]+/g;
-const jsComment = '//' // js注释标识符
-const jsComment2 = '*'
-
 
 /**
- * 翻译项目文件
+ * 翻译项目文件目前只支持中文翻译成中文繁体和英文
+ * 第一版只支持翻译.vue文件
  * 1.读取文件：一次读取一个文件
  * 1.1.遍历项目多语言zh_CN.json文件，如果相应的中文翻译已经在文件中，那么直接替换
  * 2.过滤掉已经存在的中文，合并字符调用翻译接口：读取5个文件调用一次翻译接口, 如果字数超过1000个字符，那么就读取4个文件，以此类推，直到读取一个文件。如果一个文件的字符超过1000个字符，那么继续拆分，
- * 3.生成翻译后的数据Map：以文件路径名filePath(两层路径)作为key，属性为 {zh: [], "zh-Hant": [], en: [], textKey: [`${filePath}.${enName}]` },
+ * 3.生成翻译后的数据Map：以文件路径名filePath(两层路径)作为key，属性为 {zh: [], "zh-Hant": [], en: [], textKey: [`${fileName}.${enName}]` },
  * 4.读取所有文件：重复上述操作，生成最后的数据dataMap
  * 5.转换数据Map：
  * {
- *  filePath: {
  *    textKey: {
  *      zh: `中国${split}中国`,
  *      "zh-Hant": `中國${split}中國`,
  *      en: `China${split}China`
  *    }
- *  }
  * }
  * 生成keyMap
  * zhMap = {
  *   "中国": src.components.base.China
  * }
- * 6.写入多语言json：根据用户配置的多语言文件路径，向其中添加翻译后的内容，例如在zh文件中，判断如果原来的多语言文件存在对应的textKey，那么修改dataMap和keyMap为textKey1或者textKey2
- * {
- *  filePath: {
- *    textKey: '中国'
- *  }
- * }
- * 7.再次遍历目录，根据keyMap把中文替换成key
+ * 6.写入多语言json：根据dataMap, 转换成二级层级对象然后写入
  * @param {*} program 
  */
 
@@ -72,12 +57,11 @@ const jsComment2 = '*'
  * @property {string} en 翻译的英文内容
  */
 
-/** @typedef {DataMap & Record<string, any>} DataMap*/
 /**
  * 翻译后的对象
  * * @deprecated
  * @typedef {Object} DataMap
- * @property {Record<string, DataMapMain>}
+ * @property {Record<'zh'|'zh-Hant'|'en', DataMapMain>}
  */
 
 /**
@@ -92,25 +76,22 @@ const jsComment2 = '*'
  * @property {ZhMap} zhMap 
  */
 
-/**@type {Object} key为`${start_end}` value为中文*/
-let jsAstZhMap = {}
-
-/** @type {string[]} template的中文*/
-let tplAstZhList = []
-
 /**@type {{TextTranslateBatch: () => Promise}} 腾讯翻译对象实例*/
 let client = null
 module.exports = program => {
   program
     .command('translate')
     .description('translate project')
-    .option('-P,--path [string]', '翻译目录', process.cwd())
+    .option('-P,--path [string...]', '翻译目录路径或文件路径', [process.cwd()])
     .option('-ID,--secretId [string]', '腾讯翻译secretId', '')
     .option('-KEY,--secretKey [string]', '腾讯翻译secretKey', '')
     .option('-RE,--region [string]', '腾讯翻译注册区域', '')
     .option('-W,--white [string]', '要翻译哪些后缀名的文件', '.js,.ts,.jsx,.tsx,.vue')
+    .option('-I18N,--i18nDir [string]', '翻译后多语言文件目录', path.resolve(process.cwd(), 'public', 'static', 'i18n', 'locales'))
     .action(async (info) => {
-      const { secretId, secretKey, region, path: pathAlias, white } = info
+      const transConfigPath = path.resolve(process.cwd(), 'translate-config.js')
+      const translateConfig = fs.existsSync(transConfigPath) ? require(transConfigPath) : null
+      const { secretId, secretKey, region, path: originPath, white, i18nDir } = translateConfig || info
       if (secretId && secretKey && region) {
         store.set(TRANSLATE, {
           secretId,
@@ -123,112 +104,258 @@ module.exports = program => {
       const id = secretId || cache.secretId
       const key = secretKey || cache.secretKey
       const cmpRegin = region || cache.region
+      const pathAlias = originPath || cache.path
       if (!id || !key || !cmpRegin) {
         return logError('腾讯翻译开发者secretId和secretKey和腾讯云注册区域必传')
       }
       const whiteList = white.split(',')
-      asyncReadDir(pathAlias, {
-        ignorePath: '.git,node_modules,dist',
-        async onFile(pathname) {
-          const notTranslateFile = whiteList.every(suffix => !pathname.endsWith(suffix))
-          if (notTranslateFile) {
-            return
-          }
-          if (pathname !== '/Users/wangchengkun/Documents/cc-client-vue/src/components/business-modules/config/channelConfig/telCustomerService/exonNumberPool.vue') {
-            return
-          }
-          const ctx = fs.readFileSync(pathname, 'utf-8')
-          const { styles, jsAst, jsCode, tplCode, tplAst } = getReplaceCode(ctx, pathname)
 
-          if (!zhReg.test(`${tplCode}${jsCode}`)) {
-            log(pathname, '没有中文')
-            return
-          }
+      /**
+       * 操作主函数
+       * @param {string} pathname 
+       * @returns 
+       */
+      async function main(pathname) {
+        const notTranslateFile = whiteList.every(suffix => !pathname.endsWith(suffix))
+        if (notTranslateFile) {
+          return
+        }
+        const ctx = fs.readFileSync(pathname, 'utf-8')
+        const { styles, jsAst, jsCode, tplCode, tplAst, tplAstZhList, jsAstZhMap } = getReplaceCode(ctx, pathname)
 
-          const secretParams = {
-            secretId: id,
-            secretKey: key,
-            region: cmpRegin
-          }
-          const tplChinese = getTplChinese(tplCode)
-          // return
-          /** 替换template中文 */
-          const { zhMap: tplZhMap, dataMap: tplDataMap } = await translateByBing(tplAstZhList, pathname, secretParams)
-          // const newTpl = replaceWithMaps(tplCode, {
-          //   dataMap: tplDataMap,
-          //   zhMap: tplZhMap,
+        if (!zhReg.test(`${tplCode}${jsCode}`)) {
+          log(pathname, '没有中文')
+          return
+        }
 
-          // })
-          // return 
-          class TplGenerator extends TemplateGenerator {
-            genAttrs(node) {
-              const { attrs = [], attrsMap = {}, propsTypeMap } = node
-              if (!attrs.length) {
-                return ''
-              }
-              const attrsMapKeys = Object.keys(attrsMap)
-              attrs.forEach(attr => {
-                if (zhReg.test(attr.value)) { }
-              })
-              return attrs
-                .map(originAttr => {
-                  const attr = { ...originAttr }
-                  if (zhReg.test(attr.value)) {
-                    const val = `$t('${tplZhMap[attr.value]}')`
-                    attr.value = val
-                    node.attrsMap[attr.name] = val
-                    if (attr.name.startsWith(":")) {
-                      return attr
-                    }
-                    delete attrsMap[attr.name]
-                    node.attrsMap[`:${attr.name}`] = val
-                    return {
-                      ...attr,
-                      name: `:${attr.name}`
-                    }
-                  }
-                  return attr
-                })
-                .map(attr => {
-                  const { name, value } = attr
-                  return attrsMapKeys.find(
-                    attr => `:${name}` === attr || `v-bind:${name}` === attr
-                  )
-                    ? ''
-                    : value === '""'
-                      ? `${name}`
-                      : `${name}="${removeQuotes(value)}"`
-                })
-                .filter(isNotEmpty)
+        const secretParams = {
+          secretId: id,
+          secretKey: key,
+          region: cmpRegin
+        }
+        onCopy(tplAst)
+        logWrapper.fileName = getFileName(pathname, true)
+        logWrapper('开始翻译替换vue template中文')
+        /** 替换template中文 */
+        const { zhMap: tplZhMap, dataMap: tplDataMap } = await translateByEngine(tplAstZhList, pathname, secretParams)
+        class TplGenerator extends TemplateGenerator {
+          genAttrs(node) {
+            const { attrs = [], attrsMap = {} } = node
+            if (!attrs.length) {
+              return ''
             }
+            const attrsMapKeys = Object.keys(attrsMap)
+            attrs.forEach(attr => {
+              if (zhReg.test(attr.value)) { }
+            })
+            return attrs
+              .map(originAttr => {
+                const attr = { ...originAttr }
+                if (zhReg.test(attr.value)) {
+                  const val = `$t('${tplZhMap[removeQuotes(attr.value)]}')`
+                  attr.value = val
+                  node.attrsMap[attr.name] = val
+                  if (attr.name.startsWith(":")) {
+                    return attr
+                  }
+                  delete attrsMap[attr.name]
+                  node.attrsMap[`:${attr.name}`] = val
+                  return {
+                    ...attr,
+                    name: `:${attr.name}`
+                  }
+                }
+                return attr
+              })
+              .map(attr => {
+                const { name, value } = attr
+                return attrsMapKeys.find(
+                  attr => `:${name}` === attr || `v-bind:${name}` === attr
+                )
+                  ? ''
+                  : value === '""'
+                    ? `${name}`
+                    : `${name}="${removeQuotes(value)}"`
+              })
+              .filter(isNotEmpty)
           }
 
-          const tplGenerator = new TplGenerator()
-          const { code: newTpl } = tplGenerator.generate(tplAst)
+          genText(node) {
+            const { text = '' } = node
+            return isTplTextType(text) ? `{{$t('${tplZhMap[text]}')}}` : text
+          }
+        }
 
-          /** 替换js中文 */
-          const jsZhList = Object.values(jsAstZhMap)
-          const { zhMap, dataMap } = await translateByBing(jsZhList, pathname, secretParams)
-          traverse(jsAst, {
-            enter(path) {
-              const val = typeof path.node.value === 'string' ? path.node.value : ''
-              if (!val) {
-                return
-              }
-              if (!/[\u4E00-\u9FA5]+/g.test(val)) {
-                return
-              }
-              const { start, end } = path.node
-              const zh = jsAstZhMap[`${start}_${end}`]
-              path.node.extra.raw = `this.$t('${zhMap[zh]}')`
+        const tplGenerator = new TplGenerator()
+        const { code: newTpl } = tplGenerator.generate(tplAst)
+
+        logWrapper('翻译替换vue template中文成功')
+
+        logWrapper('开始翻译替换vue script中文')
+        /** 替换js中文 */
+        const jsZhList = Object.values(jsAstZhMap)
+        const { zhMap, dataMap } = await translateByEngine(jsZhList, pathname, secretParams)
+        onCopy(dataMap)
+        traverse(jsAst, {
+          enter(path) {
+            const val = typeof path.node.value === 'string' ? path.node.value : ''
+            if (!val) {
+              return
+            }
+            if (!/[\u4E00-\u9FA5]+/g.test(val)) {
+              return
+            }
+            const { start, end } = path.node
+            const zh = jsAstZhMap[`${start}_${end}`]
+            path.node.extra.raw = `this.$t('${zhMap[zh]}')`
+          }
+        })
+        const { code: newJs } = generate(jsAst)
+        logWrapper('翻译替换vue script中文成功')
+
+        logWrapper('开始写入格式化的vue文件')
+        /** 写入文件后重新格式化 */
+        const newCode = getNewCode(newTpl, newJs, styles)
+        fs.writeFileSync(pathname, newCode, 'utf-8')
+        shelljs.exec(`npx prettier --write ${pathname}`, { silent: true })
+        logWrapper('写入成功')
+        const mergeMap = { ...tplDataMap, ...dataMap }
+        return getI18nJson(mergeMap, pathname, i18nDir)
+      }
+
+      const zhObj = {}
+      const zhHantObj = {}
+      const enObj = {}
+      for (const index in pathAlias) {
+        const sendPath = pathAlias[index]
+        if (index !== 0) {
+          console.log('\n')
+        }
+        const stats = fs.statSync(sendPath)
+        const fileName = getFileName(sendPath)
+        if (stats.isFile()) {
+          const { zhObj: zhObjOne, zhHantObj: zhHantObjOne, enObj: enObjOne } = await main(sendPath)
+          zhObj[fileName] = zhObjOne
+          zhHantObj[fileName] = zhHantObjOne
+          enObj[fileName] = enObjOne
+        } else {
+          await asyncReadDir(sendPath, {
+            ignorePath: '.git,node_modules,dist',
+            async onFile(pathname) {
+              const { zhObj: zhObjOne, zhHantObj: zhHantObjOne, enObj: enObjOne } = await main(pathname)
+              zhObj[fileName] = zhObjOne
+              zhHantObj[fileName] = zhHantObjOne
+              enObj[fileName] = enObjOne
             }
           })
-          const { code: newJs } = generate(jsAst)
-          const newCode = getNewCode(newTpl, newJs, styles)
-          fs.writeFileSync(pathname, newCode, 'utf-8')
         }
-      })
+      }
+
+      if (isEmpty(zhObj)) {
+        return logWrapper('没有内容需要被写入到多语言配置文件')
+      }
+      logWrapper('开始写入多语言配置文件')
+      const { zh: zhPath, en: enPath, 'zh-Hant': zhHantPath } = getI18nFilePath(i18nDir)
+
+      const zhJSON = require(zhPath)
+      const zhHantJSON = require(zhHantPath)
+      const enJSON = require(enPath)
+
+      const zh = mergeJSON(zhObj, zhJSON, '中文翻译json文件写入失败')
+      const zhHant = mergeJSON(zhHantObj, zhHantJSON, '中文繁体翻译json文件写入失败')
+      const en = mergeJSON(enObj, enJSON, '英文翻译json文件写入失败')
+
+      fs.writeFileSync(zhPath, JSON.stringify(zh, null, 2), 'utf-8')
+      fs.writeFileSync(zhHantPath, JSON.stringify(zhHant, null, 2), 'utf-8')
+      fs.writeFileSync(enPath, JSON.stringify(en, null, 2), 'utf-8')
+      logWrapper('写入多语言配置文件成功')
     })
+}
+
+/**
+ * 
+ * @param {string} str 
+ */
+function logWrapper(str) {
+  logSuccess(`文件${logWrapper.fileName}: ${str}`)
+}
+
+/**
+ * 写入多语言配置文件
+ * @param {DataMap} map 
+ * @param {string} pathname 
+ * @param {string} i18nDir 
+ */
+function getI18nJson(map, pathname, i18nDir) {
+  const fileName = getFileName(pathname)
+  const pipeOne = Object.fromEntries(Object.entries(map).map(([key, itemObj]) => [key.split(`${fileName}.`)[1], itemObj]))
+  const zhObj = getDeepValue(pipeOne, 'zh')
+  const zhHantObj = getDeepValue(pipeOne, 'zh-Hant')
+  const enObj = getDeepValue(pipeOne, 'en')
+
+  return {
+    zhObj,
+    zhHantObj,
+    enObj
+  }
+}
+
+
+
+/**
+ * 把第一个json合并到第二个中
+ * @param {Record<string, unknown>} from
+ * @param {Record<string, unknown>} to 
+ * @param {string} tip 
+ */
+function mergeJSON(from, to, tip) {
+  try {
+    return Object.assign(to, from)
+  } catch (error) {
+    logError(tip)
+    return {}
+  }
+}
+
+/**
+ *获取文件的value值生成新的对象
+ *@param {Record<string, Record<string, any>} obj
+ *@param {'zh' | 'zh-Hant' | 'en'} valueKey
+ */
+function getDeepValue(obj, valueKey) {
+  return Object.fromEntries(Object.entries(obj).map(([key, itemObj]) => [key, itemObj[valueKey]]))
+}
+
+/**
+ * 获取中文，中文繁体英文的文件路径
+ * @returns {DataMap}
+ */
+function getI18nFilePath(i18nDir) {
+  const zhPath = [
+    path.resolve(i18nDir, 'zh_CN.json'),
+    path.resolve(i18nDir, 'zh.json'),
+    path.resolve(i18nDir, 'zh_CN_Config.json'),
+    path.resolve(i18nDir, 'zh_Config.json'),
+    path.resolve(i18nDir, 'zh_config.json'),
+    path.resolve(i18nDir, 'zh_CN_config.json'),
+  ].find(one => fs.existsSync(one))
+
+  const zhHantPath = [
+    path.resolve(i18nDir, 'zh_TW.json'),
+    path.resolve(i18nDir, 'zh_Hant.json'),
+  ].find(one => fs.existsSync(one))
+
+  const enPath = [
+    path.resolve(i18nDir, 'en.json'),
+    path.resolve(i18nDir, 'en_Config.json'),
+    path.resolve(i18nDir, 'en_config.json'),
+  ].find(one => fs.existsSync(one))
+
+  return {
+    zh: zhPath,
+    'zh-Hant': zhHantPath,
+    en: enPath
+  }
 }
 
 /**
@@ -239,9 +366,9 @@ module.exports = program => {
  * 4.生成替换中文后的代码
  * @param {string} code 
  */
-function getReplaceCode(code, pathname) {
-  tplAstZhList = []
-  jsAstZhMap = {}
+function getReplaceCode(code) {
+  const tplAstZhList = []
+  const jsAstZhMap = {}
   const { script: { content: js }, template: { content: tplCode }, styles } = compiler.parseComponent(code)
   const { ast } = compiler.compileTemplate({
     source: tplCode
@@ -265,29 +392,11 @@ function getReplaceCode(code, pathname) {
         .map(originAttr => {
           const attr = { ...originAttr }
           if (zhReg.test(attr.value)) {
-            tplAstZhList.push(attr.value)
+            tplAstZhList.push(removeQuotes(attr.value))
             return attr
           }
           return attr
         })
-        // .map(originAttr => {
-        //   const attr = { ...originAttr }
-        //   if (zhReg.test(attr.value)) {
-        //     const val = `1111`
-        //     attr.value = val
-        //     node.attrsMap[attr.name] = val
-        //     if (attr.name.startsWith(":")) {
-        //       return attr
-        //     }
-        //     delete attrsMap[attr.name]
-        //     node.attrsMap[`:${attr.name}`] = val
-        //     return {
-        //       ...attr,
-        //       name: `:${attr.name}`
-        //     }
-        //   }
-        //   return attr
-        // })
         .map(attr => {
           const { name, value } = attr
           return attrsMapKeys.find(
@@ -300,11 +409,15 @@ function getReplaceCode(code, pathname) {
         })
         .filter(isNotEmpty)
     }
+
+    genText(node) {
+      const { text = '' } = node
+      isTplTextType(text) && tplAstZhList.push(text)
+      return text
+    }
   }
 
   const tplGenerator = new TplGenerator()
-  // const tplGenerator = new TemplateGenerator()
-  // const newTpl = tplGenerator.generate(ast)
   tplGenerator.generate(ast)
   traverse(jsAst, {
     enter(path) {
@@ -326,80 +439,33 @@ function getReplaceCode(code, pathname) {
     jsAst,
     tplAst: ast,
     styles,
+    tplAstZhList,
+    jsAstZhMap,
     code
   }
 }
 
-
 /**
- * 是否是模板中的标签内中文 <input :value="'中文'" />
- * @param {string} zh 
- * @returns {boolean}
- */
-function isTplInlineZH(zh) {
-  return zh.startsWith(inlineZHChart)
-}
-
-/**
- * 获取模板替换
- * @param {string} key en
- * @param {string} zh zh
- */
-function getCmpTplReplace(key, zh) {
-  if (zh.startsWith(inlineZHChart)) {
-    return `${inlineZHChart[0]}${inlineZHChart[1]}$t('${key}')`
-  }
-  if (zh.startsWith(inlineZHChart2)) {
-    return `${inlineZHChart2[0]}${inlineZHChart2[1]}$t('${key}')`
-  }
-  return `{{$t('${key}')}}`
-}
-
-/**
- * 模板字符串中文数组二次处理
- */
-function tplZhReplace(zh) {
-  return zh.replace(inlineZHChart, '').replace(inlineZHChart2, '').replace(`'`, '')
-}
-
-/**
- * 获取template代码中的中文数组
- * @param {string} tplCode 
- * @returns string[]
- */
-function getTplChinese(tplCode) {
-  return tplCode.match(tplCNPattern)
-}
-
-/**
- * 获取js代码中的中文数组
- * @param {string} jsCode 
- * @returns string[]
- */
-function getJSChinese(jsCode) {
-  return jsCode.match(jsTransPattern)
-}
-
-/**
- * 不是注释里的中文
- * @param {string} str 
+ * 检测是否是标签中的纯文本 <p>纯文本</p>
+ * @param {string} text 
  * @returns 
  */
-function isPlaintChinese(str) {
-  str = str.replace(/\s/g, '')
-  return !str.startsWith(jsComment) &&
-    !str.startsWith(jsComment2) &&
-    !str.startsWith(tplCommentStart) &&
-    !str.endsWith(tplCommentEnd)
+function isTplTextType(text) {
+  const plaintTxt = text.trim()
+  return plaintTxt && !plaintTxt.startsWith('{{') && !plaintTxt.endsWith('}}')
 }
 
 /**
  * 获取文件名
  * @param {string} pathname 
+ * @param {boolean} [getFullName=false] 
  * @returns 
  */
-function getFileName(pathname) {
+function getFileName(pathname, getFullName) {
   const name = path.basename(pathname)
+  if (getFullName) {
+    return name
+  }
   const nameArr = name.split('.')
   return nameArr[0]
 }
@@ -427,8 +493,12 @@ function sentenceToWord(enName) {
   return enNameArr.join('')
 }
 
-function trim(i) {
-  return i.trim()
+/**
+ * 去掉key的开始和结束.
+ * @param {string} key 
+ */
+function trimKey(key) {
+  return key.replace(/(\.)/, '').replace(/(\.)$/, '')
 }
 
 /**
@@ -453,7 +523,6 @@ function trim(i) {
  * @returns {TranslateResult}
  */
 async function translate(secret, params) {
-  // console.log("🚀 ~ file: translate.js:452 ~ translate ~ secret", secret, params)
   const clientConfig = {
     credential: pick(secret, ['secretId', 'secretKey']),
     region: secret.region,
@@ -478,27 +547,33 @@ async function translate(secret, params) {
  */
 
 /**
- * 请求必应翻译接口进行翻译
+ * 请求腾讯翻译接口进行翻译
  * @param {string[]} filterList 
  * @param {string} pathname
  * @param {Secret} secret 
  * @returns {TransResult}
  */
-async function translateByBing(filterList, pathname, secret) {
+async function translateByEngine(filterList, pathname, secret) {
+  if (isEmpty(filterList)) {
+    return {
+      dataMap: {},
+      zhMap: {}
+    }
+  }
   const res1 = await translate(secret, {
     SourceTextList: filterList,
     Source: 'auto',
     Target: 'en',
     ProjectId: 0
   })
-  const enList = res1.TargetTextList
+  const enList = res1.TargetTextList.map(trimKey)
   const res2 = await translate(secret, {
     SourceTextList: filterList,
     Source: 'auto',
     Target: 'zh-TW',
     ProjectId: 0
   })
-  const TWList = res2.TargetTextList
+  const TWList = res2.TargetTextList.map(trimKey)
   const fileName = getFileName(pathname)
   const dataMap = Object.fromEntries(filterList.map((i, m) => {
     const enName = enList[m]
@@ -539,7 +614,9 @@ async function translateByBing(filterList, pathname, secret) {
  * @returns {string}
  */
 function getNewCode(tplCode, jsCode, styles) {
-  const tpl = `<template>${addSpaceByLine(tplCode)}</template>`
+  const tpl = `<template>
+    ${addSpaceByLine(tplCode)}
+  </template>`
   const js = `
   <script>
     ${addSpaceByLine(jsCode, 2, 0)}
@@ -566,39 +643,6 @@ function addSpaceByLine(code, space = 2, noSpaceIndex) {
   const spaceStr = ' '.repeat(space)
   const spaceCode = codeArr.map((i, m) => `${noSpaceIndex === m ? '' : spaceStr}${i}`).join('\n')
   return spaceCode
-}
-
-/**
- * 根据拿到中文字符数组对其中的代码进行替换
- * @param {string} code 
- * @param {Record<string, any>} options 
- * @param {DataMap} options.dataMap 
- * @param {ZhMap} options.zhMap
- * @param {RegExp} options.codeReg
- * @param {RegExp} options.keyReg
- * @param {function} options.strTpl
- * @returns 新的code字符串
- */
-function replaceWithMaps(code, options) {
-  const {
-    zhMap,
-    codeReg = jsCNPattern,
-    keyReg = /'/g,
-    strTpl = key => `this.$t('${key}')`
-  } = options
-  const newCode = code.replace(codeReg, (zh) => {
-    if (!zh) {
-      return zh
-    }
-    const chinese = tplZhReplace(zh)
-    if (!isPlaintChinese(chinese)) {
-      return chinese
-    }
-    const filterChinese = chinese.replace(keyReg, '')
-    const key = zhMap[filterChinese]
-    return strTpl(key, zh)
-  })
-  return newCode
 }
 
 

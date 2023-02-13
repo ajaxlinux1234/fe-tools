@@ -21,4 +21,5 @@ require('../lib/update')(program);
 require('../lib/version')(program);
 // require('../lib/music/index')(program);
 require('../lib/translate')(program);
+require('../lib/translate-init')(program);
 program.parse(process.argv);
