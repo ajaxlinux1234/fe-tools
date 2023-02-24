@@ -137,7 +137,8 @@ class TemplateGenerator {
     const cmpChild = [...get(node, 'children', []), ...slotChildren]
     if (!isEmpty(vElseObj)) {
       delete node.ifConditions
-      node.parent.children.push(vElseObj)
+      const ifIndex = node.parent.children.findIndex(i => i.if)
+      node.parent.children.splice(ifIndex + 1, 0, vElseObj)
     }
     if (!cmpChild.length) {
       return ''
@@ -207,7 +208,7 @@ class TemplateGenerator {
 
         const matched = attr.match(customPropertyReg)
         if (matched) {
-          return `${matched[0]}=${attrsMap[attr]}`
+          return `${matched[0]}="${attrsMap[attr]}"`
         }
         return ''
       })
@@ -252,7 +253,7 @@ class TemplateGenerator {
         )
           ? ''
           : value === '""'
-            ? `${name}=""`
+            ? `${name}`
             : `${name}="${removeQuotes(value)}"`
       })
       .filter(isNotEmpty)

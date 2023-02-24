@@ -24,6 +24,14 @@ Commands:
 
 ## Renew
 
+### 1.1.4
+
+#### tools translate
+
+translate vue project
+`tools translate-init`
+`tools translate`
+
 ### 1.1.0
 
 #### tools init
