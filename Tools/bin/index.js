@@ -7,6 +7,7 @@ const { initCache } = require('../util/util');
 initCache()
 
 require('../lib/rule-check')(program);
+require('../lib/nginx-config')(program);
 require('../lib/check-ctx')(program);
 require('../lib/cp')(program);
 require('../lib/debug')(program);
