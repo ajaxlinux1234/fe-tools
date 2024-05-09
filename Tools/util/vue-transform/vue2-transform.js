@@ -1,6 +1,6 @@
 const { isEmpty, get, flattenDepth } = require('lodash')
 const { isUnaryTag, removeQuotes, isNotEmpty, isBoolean } = require('./utils')
-const onCopy = require('../../util/on-copy')
+const onCopy = require('../on-copy')
 const { DIRECTIVES, TYPE, onReg, preserveBindingReg, customPropertyReg, emptyBaseNodeAttr } = require('./constants')
 
 class TemplateGenerator {

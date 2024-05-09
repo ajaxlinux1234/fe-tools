@@ -32,7 +32,18 @@ function getPathName(pathStr) {
   };
 }
 
+
+function checkFileExists(path) {
+  try {
+    fs.accessSync(path, fs.constants.F_OK);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 module.exports = {
   createFile,
   getPathName,
+  checkFileExists
 };

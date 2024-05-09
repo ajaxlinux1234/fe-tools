@@ -22,6 +22,22 @@ module.exports = {
   },
   // 命名空间，翻译后的数据对象放到哪个对象里面，多层对象{a: {b: {}}}写法是a.b
   namespace: '',
+  // 忽略的文件
+  ignores: ['/Users/wangchengkun/Documents/managev/src/components/footer/index.vue'],
   // 根据文件已有的多语言内容自动获取命名空间
-  autoNamespace: false
+  autoNamespace: false,
+  // 没有国际化时国际化的导入字符串
+  i18nImportStr: function (tplStr) {
+    if (tplStr.includes('useI18n')) {
+      return false
+    }
+    return `
+    import { useI18n } from 'vue-i18n';
+    const { t } = useI18n();
+    `
+  },
+  // 国际化使用时的函数名称字符串
+  i18nUseName: 't',
+  // 组合的时候script在最上面
+  scriptFirst: true,
 }

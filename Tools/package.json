@@ -1,6 +1,6 @@
 {
  "name": "@ajaxlinux/tools",
- "version": "1.1.5",
+ "version": "1.1.6",
  "bin": {
   "tools": "./bin/index.js"
  },
@@ -23,11 +23,11 @@
  "author": "",
  "license": "ISC",
  "dependencies": {
-  "@babel/generator": "^7.20.7",
-  "@babel/parser": "^7.20.7",
-  "@babel/traverse": "^7.20.10",
+  "@babel/generator": "^7.23.6",
+  "@babel/parser": "^7.23.6",
+  "@babel/traverse": "^7.23.6",
   "@vue/compiler-dom": "^3.2.45",
-  "@vue/compiler-sfc": "^2.7.14",
+  "@vue/compiler-sfc": "^3.3.13",
   "axios": "^0.25.0",
   "babel-extract-comments": "^1.0.0",
   "baidu-translate-api": "^0.4.3",
@@ -45,10 +45,12 @@
   "md5": "^2.3.0",
   "moment": "^2.29.1",
   "prettier": "^2.8.1",
+  "prettier-eslint": "^16.3.0",
   "shelljs": "^0.8.4",
   "standard-version": "^9.3.2",
   "tencentcloud-sdk-nodejs": "^4.0.523",
   "translate-api": "^0.3.18",
+  "uuid": "^9.0.1",
   "vue-prettier": "^0.2.0",
   "vue-template-compiler": "^2.7.14"
  }

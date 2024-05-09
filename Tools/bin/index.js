@@ -21,5 +21,6 @@ require('../lib/setRAM')(program);
 require('../lib/update')(program);
 require('../lib/version')(program);
 require('../lib/translate')(program);
+require('../lib/translate-vue3')(program);
 require('../lib/translate-init')(program);
 program.parse(process.argv);

@@ -17,6 +17,7 @@ const isUnaryTag = makeMap(
   'link,meta,param,source,track,wbr'
 )
 
+
 module.exports = {
   isNotEmpty,
   isBoolean,

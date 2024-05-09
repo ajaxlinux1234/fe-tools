@@ -29,7 +29,7 @@ module.exports = async function () {
 
 function getLocalVersion() {
   try {
-    const { version } = require("../package.json");
+    const { version } = require(path || "../package.json");
     return version[0] === "^" || version[0] === "~" ?
       version.slice(1) :
       version;

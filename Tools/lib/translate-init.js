@@ -19,7 +19,7 @@ module.exports = program => {
       if (fs.existsSync(translateConfig)) {
         return
       }
-      fs.writeFileSync(translateConfig, fs.readFileSync(path.resolve(__dirname, '..', 'tpl', 'translate-config.js'), 'utf-8'), 'utf-8')
+      fs.writeFileSync(translateConfig, fs.readFileSync(path.resolve(__dirname, '..', 'tpl', 'translate.config.js'), 'utf-8'), 'utf-8')
       logSuccess('翻译配置文件初始化完成')
     })
 }
