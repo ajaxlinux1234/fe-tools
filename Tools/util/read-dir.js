@@ -20,7 +20,7 @@ module.exports = function readDirFile(dir, options = {}, level, list = []) {
   ignorePath = ignorePath.filter((i) => i.trim())
     .map(i => i.split(path.sep))
     .map(i => i.join('\/'));
-  files.forEach((filename) => {
+  files.forEach((filename, index) => {
     let pathname = path.resolve(dir, filename);
     const stat = fs.statSync(pathname);
     pathname = pathname.split(path.sep).join('\/')
@@ -40,8 +40,12 @@ module.exports = function readDirFile(dir, options = {}, level, list = []) {
       }
     } else if (stat.isFile()) {
       if (typeof options.onFile === "function") {
+        const prePath = files[index - 1]
+        const nextPath = files[index + 1]
         options.onFile(pathname, {
-          isTextFile: !!pathname.match(isTextFile)
+          isTextFile: !!pathname.match(isTextFile),
+          preFile: prePath ? path.resolve(dir, prePath) : null,
+          nextFile: nextPath ? path.resolve(dir, nextPath) : null
         });
       }
       list.push(pathname);

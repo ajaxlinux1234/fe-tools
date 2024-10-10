@@ -16,6 +16,7 @@ const log = require('../util/log');
 const { logError, logSuccess } = require('../util/color-log');
 const asyncReadDir = require("../util/async-read-dir");
 const store = require('../util/store');
+const { checkFileExists } = require('../util/file');
 const { TRANSLATE } = require('../util/constants');
 const TemplateGenerator = require('../util/vue-transform/vue2-transform');
 
@@ -23,7 +24,7 @@ const { removeQuotes, isNotEmpty } = require('../util/vue-transform/utils');
 const onCopy = require('../util/on-copy');
 const { sleep } = require('../util/util');
 
-const zhReg = /[\u4E00-\u9FA5]+/g
+const zhReg = /[\u4E00-\u9FA5]/
 
 /**
  * @typedef {Object} DataMapMain dataMap主要部分
@@ -67,7 +68,7 @@ module.exports = program => {
     .option('-I18N,--i18nDir [string]', '翻译后多语言文件目录', path.resolve(process.cwd(), 'public', 'static', 'i18n', 'locales'))
     .option('-I18NF,--i18nFileMap', '翻译后多语言文件文件名', { zh: 'zh_CN.json', 'zh-Hant': 'zh_TW.json', en: 'en.json' })
     .action(async (info) => {
-      const transConfigPath = path.resolve(process.cwd(), 'translate-config.js')
+      const transConfigPath = path.resolve(process.cwd(), 'translate.config.js')
       const translateConfig = fs.existsSync(transConfigPath) ? require(transConfigPath) : null
       const { secretId, secretKey, region, path: originPath, white, i18nDir, i18nFileMap, namespace, autoNamespace } = translateConfig || info
       if (secretId && secretKey && region) {
@@ -123,9 +124,6 @@ module.exports = program => {
               return ''
             }
             const attrsMapKeys = Object.keys(attrsMap)
-            attrs.forEach(attr => {
-              if (zhReg.test(attr.value)) { }
-            })
             return attrs
               .map(originAttr => {
                 const attr = { ...originAttr }
@@ -175,16 +173,29 @@ module.exports = program => {
         const { zhMap, dataMap } = await translateByEngine(jsZhList, pathname, secretParams, namespace, autoNamespace, ctx)
         traverse(jsAst, {
           enter(path) {
-            const val = typeof path.node.value === 'string' ? path.node.value : ''
+            let val = ''
+            if (typeof path.node.value === 'string') {
+              val = path.node.value
+            } else if (get(path, 'node.value.raw')) {
+              val = get(path, 'node.value.raw')
+            }
             if (!val) {
               return
             }
-            if (!/[\u4E00-\u9FA5]+/g.test(val)) {
+            if (!zhReg.test(val)) {
               return
             }
             const { start, end } = path.node
             const zh = jsAstZhMap[`${start}_${end}`]
-            path.node.extra.raw = `this.$t('${zhMap[zh]}')`
+            const isStringTpl = path.node.type === 'TemplateElement'
+            const finalVal = isStringTpl ? "${" + `this.$t('${zhMap[zh]}')` + "}" : `this.$t('${zhMap[zh]}')`
+            if (path.node.extra) {
+              path.node.extra.raw = finalVal
+            } else if (typeof path.node.value === 'object') {
+              path.node.value.raw = finalVal
+            } else if (typeof path.node.value === 'string') {
+              path.node.value = finalVal
+            }
           }
         })
         const { code: newJs } = generate(jsAst)
@@ -239,16 +250,33 @@ module.exports = program => {
       logWrapper('开始写入多语言配置文件')
       const { zh: zhPath, en: enPath, 'zh-Hant': zhHantPath } = getI18nFilePath(i18nDir, i18nFileMap)
 
-      const zhJSON = require(zhPath)
-      const zhHantJSON = require(zhHantPath)
-      const enJSON = require(enPath)
+
+      let zhJSON, zhHantJSON, enJSON
+
+      try {
+        zhJSON = require(zhPath)
+      } catch (error) {
+        zhJSON = {}
+      }
+
+      try {
+        zhHantJSON = require(zhHantPath)
+      } catch (error) {
+        zhHantJSON = {}
+      }
+
+      try {
+        enJSON = require(enPath)
+      } catch (error) {
+        enJSON = {}
+      }
 
       const zh = mergeJSON(zhObj, zhJSON, '中文翻译json文件写入失败')
       const zhHant = mergeJSON(zhHantObj, zhHantJSON, '中文繁体翻译json文件写入失败')
       const en = mergeJSON(enObj, enJSON, '英文翻译json文件写入失败')
-      fs.writeFileSync(zhPath, JSON.stringify(zh, null, 2), 'utf-8')
-      fs.writeFileSync(zhHantPath, JSON.stringify(zhHant, null, 2), 'utf-8')
-      fs.writeFileSync(enPath, JSON.stringify(en, null, 2), 'utf-8')
+      checkFileExists(zhPath) && fs.writeFileSync(zhPath, JSON.stringify(zh, null, 2), 'utf-8')
+      checkFileExists(zhHantPath) && fs.writeFileSync(zhHantPath, JSON.stringify(zhHant, null, 2), 'utf-8')
+      checkFileExists(enPath) && fs.writeFileSync(enPath, JSON.stringify(en, null, 2), 'utf-8')
       logWrapper('写入多语言配置文件成功')
     })
 }
@@ -259,6 +287,11 @@ module.exports = program => {
  */
 function logWrapper(str) {
   logSuccess(`文件${logWrapper.fileName}: ${str}`)
+}
+
+/** 首字母转为大写 */
+function capitalizeFirstLetter(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 /**
@@ -274,7 +307,11 @@ function getI18nJson(map, pathname, namespace, autoNamespace, code) {
   const pipeOne = Object.fromEntries(Object.entries(map).map(([key, itemObj]) => [key.split(`${preName}.`)[1], itemObj]))
   const zhObj = getDeepValue(pipeOne, 'zh')
   const zhHantObj = getDeepValue(pipeOne, 'zh-Hant')
-  const enObj = getDeepValue(pipeOne, 'en')
+  let enObj = getDeepValue(pipeOne, 'en')
+
+  if (enObj) {
+    enObj = Object.fromEntries(Object.entries(enObj).map(([key, value]) => [key, capitalizeFirstLetter(value)]))
+  }
 
   return {
     zhObj,
@@ -325,7 +362,7 @@ function getI18nFilePath(i18nDir, i18nFileMap) {
   if (!isEmpty(i18nFileMap)) {
     return {
       zh: path.resolve(i18nDir, i18nFileMap.zh),
-      'zh-Hant': path.resolve(i18nDir, i18nFileMap['zh-Hant']),
+      'zh-Hant': path.resolve(i18nDir, i18nFileMap['zh-Hant'] || 'zh-Hant.json'),
       en: path.resolve(i18nDir, i18nFileMap.en)
     }
   }
@@ -395,9 +432,6 @@ function getReplaceCode(code, pathname) {
           return ''
         }
         const attrsMapKeys = Object.keys(attrsMap)
-        attrs.forEach(attr => {
-          if (zhReg.test(attr.value)) { }
-        })
         return attrs
           .map(originAttr => {
             const attr = { ...originAttr }
@@ -433,20 +467,25 @@ function getReplaceCode(code, pathname) {
 
     const tplGenerator = new TplGenerator()
     tplGenerator.generate(ast)
+
     traverse(jsAst, {
       enter(path) {
-        const val = typeof path.node.value === 'string' ? path.node.value : ''
+        let val = ''
+        if (typeof path.node.value === 'string') {
+          val = path.node.value
+        } else if (get(path, 'node.value.raw')) {
+          val = get(path, 'node.value.raw')
+        }
         if (!val) {
           return
         }
-        if (!/[\u4E00-\u9FA5]+/g.test(val)) {
+        if (!zhReg.test(val)) {
           return
         }
-        const { start, end, value } = path.node
-        jsAstZhMap[`${start}_${end}`] = value
+        const { start, end, } = path.node
+        jsAstZhMap[`${start}_${end}`] = val
       }
     })
-
     if (isEmpty(tplAstZhList) && isEmpty(Object.values(jsAstZhMap))) {
       logError(`${pathname}没有中文`)
       return {}
@@ -499,18 +538,20 @@ function stringToUpCase(str) {
 /**
  * 句子转单词
  * @param {string} enName 
+ * @param {boolean=} [isFullName=false] 是否需要完整的名称
  * @returns {string}
  */
-function sentenceToWord(enName) {
+function sentenceToWord(enName, isFullName) {
   if (!enName) {
     return enName
   }
   const arr = enName
     .replace('，', ' ')
     .replace(',', ' ')
+    .replace(/[\p{P}\p{S} \u3000-\u303F\uFF01-\uFF5E\n\r]+/gu, '')
     .split(' ')
   const enNameArr = arr
-    .filter((_, m) => m === 0 || m === arr.length - 1)
+    .filter((_, m) => isFullName ? true : m === 0 || m === arr.length - 1)
     .map(stringToUpCase)
   return enNameArr.join('')
 }
@@ -602,22 +643,22 @@ async function translateByEngine(filterList, pathname, secret, namespace, autoNa
   const namePre = getNamePre(namespace, pathname, autoNamespace, code)
   const dataMap = Object.fromEntries(filterList.map((i, m) => {
     const enName = enList[m]
-    const name = sentenceToWord(enName)
+    const name = sentenceToWord(enName, true)
     const TWName = TWList[m]
     return [
-      `${namePre}.${name}`,
+      `${namePre}.${name}`.replace(/'/g, ''),
       {
-        zh: i,
-        en: enName,
-        "zh-Hant": TWName
+        zh: i.replace(/'/g, ''),
+        en: enName.replace(/'/g, ''),
+        "zh-Hant": TWName.replace(/'/g, '')
       }
     ]
   }))
   const zhMap = Object.fromEntries(filterList.map((i, m) => {
-    const name = sentenceToWord(enList[m])
+    const name = sentenceToWord(enList[m], true)
     return [
       i,
-      `${namePre}.${name}`,
+      `${namePre}.${name}`.replace(/'/g, ''),
     ]
   }))
   return {
@@ -673,10 +714,18 @@ function getNewCode(tplCode, jsCode, styles) {
     ${addSpaceByLine(jsCode, 2, 0)}
   </script>\n`
   const styleStr = styles.map((i, m) => {
-    const style = i.attrs.scoped ?
-      `<style lang="stylus" scoped>${addSpaceByLine(i.content)}</style>\n` :
-      `<style lang="stylus">${addSpaceByLine(i.content)}</style>\n`
-    return style
+    const lang = i.attrs.lang
+    if (i.attrs.scoped) {
+      if (lang) {
+        return `<style scoped lang="${i.attrs.lang}">${addSpaceByLine(get(i, 'content', ''))}</style>\n`
+      }
+      return `<style scoped>${addSpaceByLine(get(i, 'content', ''))}</style>\n`
+    }
+
+    if (lang) {
+      return `<style lang="${i.attrs.lang}">${addSpaceByLine(get(i, 'content', ''))}</style>\n`
+    }
+    return `<style>${addSpaceByLine(get(i, 'content', ''))}</style>\n`
   }).join('')
   const newCode = `${tpl}${js}${styleStr}`
   return newCode

@@ -1,7 +1,7 @@
 const inquirer = require("inquirer");
 const iExec = require("../util/i-exec");
 const path = require('path');
-const moment = require('moment');
+const dayjs = require('dayjs');
 const shelljs = require('shelljs');
 
 /**
@@ -12,7 +12,7 @@ module.exports = function (program) {
   program
     .command('init')
     .description('init vue or react project with f2elint and webpack config')
-    .option('-N,--name <string>', 'project name', moment().format('YYYYMMDD_hhmmss'))
+    .option('-N,--name <string>', 'project name', dayjs().format('YYYYMMDD_hhmmss'))
     .action(async (info) => {
       const { name } = info;
       const tpl = await inquirer.prompt([{

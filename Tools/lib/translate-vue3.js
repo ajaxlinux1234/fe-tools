@@ -22,7 +22,7 @@ const { sleep } = require('../util/util');
 const onCopy = require('../util/on-copy')
 const { checkFileExists, createFile } = require('../util/file');
 const { asyncReadAllDir } = require('../util/read-all-dir');
-const decompiler = require('../util/vue-transform/vue3-ast-template');
+const vue3AstToTpl = require('../util/vue-transform/vue3-ast-template');
 const traverseAST = require('../util/vue-transform/ast-traverse');
 const format = require('prettier-eslint');
 
@@ -70,6 +70,7 @@ module.exports = program => {
     .option('-N,--namespace [string]', '命令空间', '')
     .option('-AUTO,--autoNamespace [boolean]', '是否启用自动获取命令空间', '')
     .option('-W,--white [string]', '要翻译哪些后缀名的文件', '.vue')
+    .option('-R,--retranslate', '是否把翻译后的文案转成中文重新翻译')
     .option('-I18N,--i18nDir [string]', '翻译后多语言文件目录', path.resolve(process.cwd(), 'public', 'static', 'i18n', 'locales'))
     .option('-I18NF,--i18nFileMap', '翻译后多语言文件文件名', { zh: 'zh_CN.json', 'zh-Hant': 'zh_TW.json', en: 'en.json' })
     .action(async (info) => {
@@ -83,7 +84,7 @@ module.exports = program => {
         vueVersion
 
       const isVue3 = vueStableVersion.startsWith('3')
-      const { secretId, secretKey, region, path: originPath, white, i18nDir, i18nFileMap, namespace, autoNamespace, i18nUseName, i18nImportStr, scriptFirst, ignores = [] } = translateConfig || info
+      const { secretId, secretKey, region, path: originPath, white, i18nDir, i18nFileMap, namespace, autoNamespace, i18nUseName, i18nImportStr, scriptFirst, customTranslate, retranslate } = translateConfig || info
       if (secretId && secretKey && region) {
         store.set(TRANSLATE, {
           secretId,
@@ -97,7 +98,7 @@ module.exports = program => {
       const key = secretKey || cache.secretKey
       const cmpRegin = region || cache.region
       const pathAlias = originPath || cache.path
-      if (!id || !key || !cmpRegin) {
+      if ((!id || !key || !cmpRegin) && !customTranslate) {
         return logError('腾讯翻译开发者secretId和secretKey和腾讯云注册区域必传')
       }
       const whiteList = white.split(',')
@@ -123,7 +124,7 @@ module.exports = program => {
       let willTranslateList = []
       const jsAstZhMapUnion = {}
 
-      let fileContent = await asyncReadAllDir(pathAlias, { ignore: ['.git', 'node_modules', 'dist', ...ignores] });
+      let fileContent = await asyncReadAllDir(pathAlias, { ignore: ['.git', 'node_modules', 'dist'] });
 
 
       fileContent = fileContent.filter(one =>
@@ -133,7 +134,15 @@ module.exports = program => {
       )
 
       for await (const { pathname, content } of fileContent) {
-        const res = await main(pathname, content)
+        let newCode = ''
+        if (retranslate) {
+          newCode = await new Retranslate().getInstance({
+            ctx: content,
+            translateConfig,
+            pathname
+          })
+        }
+        const res = await main(pathname, newCode || content)
         if (!isEmpty(res)) {
           const { zhList = [] } = res
           willTranslateList.push(...zhList)
@@ -150,9 +159,9 @@ module.exports = program => {
       }
       const common = 'common'
       logWrapper.fileName = getFileName(common, true)
-      logWrapper('开始翻译替换中文')
+      logWrapper(customTranslate ? '使用自定义翻译引擎开始翻译替换中文' : '开始翻译替换中文')
       /** 替换template中文 */
-      const { zhMap, dataMap } = await translateByEngine(willTranslateList, common, secretParams, namespace, autoNamespace, '')
+      const { zhMap, dataMap } = await translateByEngine(willTranslateList, common, secretParams, namespace, autoNamespace, '', customTranslate, retranslate)
       for (pathname in jsAstZhMapUnion) {
         const { tplAst, jsAst, jsAstZhMap, code, jsCode, styles } = jsAstZhMapUnion[pathname]
 
@@ -160,6 +169,14 @@ module.exports = program => {
           const valOne = get(node, 'value.content', '')
           const valTwo = get(node, 'children.content', '')
           const val = valOne || valTwo
+          const source = get(node, 'loc.source')
+          const sourceList = getAstZhList(source)
+          if (!val && !isEmpty(sourceList) && typeof source === 'string') {
+            set(node, 'loc.source', source.split('\n').map(
+              one => one.replace(/[\u4E00-\u9FA5]+/g, zh => `{{${i18nUseName}('${zhMap[zh]}')}}`)
+            ).join('\n'))
+            return
+          }
           if (!val) {
             return
           }
@@ -182,7 +199,7 @@ module.exports = program => {
           }
         })
 
-        const newTpl = decompiler(tplAst)
+        const newTpl = vue3AstToTpl(tplAst)
 
         /** 替换js中文 */
         let newJs = jsCode;
@@ -190,7 +207,12 @@ module.exports = program => {
         if (!isEmpty(jsAst) && !isEmpty(jsZhList)) {
           traverse(jsAst, {
             enter(path) {
-              const val = typeof path.node.value === 'string' ? path.node.value : ''
+              let val = ''
+              if (typeof path.node.value === 'string') {
+                val = path.node.value
+              } else if (get(path, 'node.value.raw')) {
+                val = get(path, 'node.value.raw')
+              }
               const { start, end } = path.node
               if (!val) {
                 return
@@ -207,8 +229,7 @@ module.exports = program => {
 
         const finalJs = mergeI18nImport(newJs, i18nImportStr)
         let newCode = getNewCode(newTpl, finalJs, styles, code, scriptFirst)
-        const prettierConfigPath = path.resolve(process.cwd(), '.prettierrc.json')
-        const hasPrettierConfig = checkFileExists(prettierConfigPath)
+        const { hasPrettierConfig, prettierConfigPath } = getPrettierConfig()
         fs.writeFileSync(pathname, newCode, 'utf-8')
         if (hasPrettierConfig) {
           shelljs.exec(`npx prettier --config ${prettierConfigPath} --write ${pathname}`, { silent: true })
@@ -227,7 +248,6 @@ module.exports = program => {
       zhObj[preName] = zhObjOne
       zhHantObj[preName] = zhHantObjOne
       enObj[preName] = enObjOne
-
 
       if (isEmpty(Object.values(zhObj)[0])) {
         return logWrapper('没有内容需要被写入到多语言配置文件')
@@ -263,6 +283,15 @@ module.exports = program => {
       checkFileExists(enPath) && fs.writeFileSync(enPath, JSON.stringify(en, null, 2), 'utf-8')
       logWrapper('写入多语言配置文件成功')
     })
+}
+
+function getPrettierConfig() {
+  const prettierConfigPath = path.resolve(process.cwd(), '.prettierrc.json')
+  const hasPrettierConfig = checkFileExists(prettierConfigPath)
+  return {
+    hasPrettierConfig,
+    prettierConfigPath
+  }
 }
 
 /**
@@ -423,6 +452,20 @@ async function getI18nFilePath(i18nDir, i18nFileMap) {
 }
 
 /**
+ * 获取模板的AST中不能解析的中文内容
+ * @param {*} source 
+ */
+function getAstZhList(source) {
+  if (!source || typeof source !== 'string') {
+    return source
+  }
+  return source.split('\n')
+    .filter(one => /[\u4E00-\u9FA5]+/g.test(one))
+    .map(one => one.replace(/[\t|'|\s]/g, ''))
+    .filter(one => /^[\u4e00-\u9fff]+$/.test(one))
+}
+
+/**
  * 代码转换
  * 1.获取没有注释的ast代码
  * 2.找到其中的中文
@@ -452,7 +495,11 @@ function getReplaceCode(code, pathname, isVue3) {
     const tplAstZhList = []
 
     traverseAST(ast, (node) => {
-      const val = get(node, 'value.content', '') || get(node, 'children.content', '')
+      let val = get(node, 'value.content', '') || get(node, 'children.content', '')
+      const sourceList = getAstZhList(get(node, 'loc.source'))
+      if (!val && !isEmpty(sourceList)) {
+        tplAstZhList.push(...sourceList)
+      }
       if (!val) {
         return
       }
@@ -466,11 +513,15 @@ function getReplaceCode(code, pathname, isVue3) {
         tplAstZhList.push(node.children.content)
       }
     })
-
     if (!isEmpty(jsAst)) {
       traverse(jsAst, {
         enter(path) {
-          const val = typeof path.node.value === 'string' ? path.node.value : ''
+          let val = ''
+          if (typeof path.node.value === 'string') {
+            val = path.node.value
+          } else if (get(path, 'node.value.raw')) {
+            val = get(path, 'node.value.raw')
+          }
           if (!val) {
             return
           }
@@ -482,7 +533,6 @@ function getReplaceCode(code, pathname, isVue3) {
         }
       })
     }
-
     const jsAstZhList = Object.values(jsAstZhMap)
     const zhList = Array.from(new Set([...tplAstZhList, ...jsAstZhList]))
     if (isEmpty(zhList)) {
@@ -544,6 +594,8 @@ function sentenceToWord(enName, isFullName) {
   const arr = enName
     .replace('，', ' ')
     .replace(',', ' ')
+    .replace(/\n,!\?/g, '')
+    // .replace(/[\p{P}\p{S} \u3000-\u303F\uFF01-\uFF5E\n\r]+/gu, '')
     .split(' ')
   const enNameArr = arr
     .filter((_, m) => isFullName ? true : m === 0 || m === arr.length - 1)
@@ -604,6 +656,10 @@ async function translate(secret, params) {
  * @property {'ap-beijing'|'ap-chengdu'|'ap-chongqing'|'ap-guangzhou'|'ap-hongkong'|'ap-seoul'|'ap-shanghai'|'ap-singapore'} region
  */
 
+function filterTag(name) {
+  return !name.includes('</') && !name.includes('/>') && !name.includes('<') && !name.includes('>')
+}
+
 /**
  * 请求腾讯翻译接口进行翻译
  * @param {string[]} filterList 
@@ -614,7 +670,15 @@ async function translate(secret, params) {
  * @param {string=} code
  * @returns {TransResult}
  */
-async function translateByEngine(filterList, pathname, secret, namespace, autoNamespace, code) {
+async function translateByEngine(oList, pathname, secret, namespace, autoNamespace, code, customTranslate) {
+  const filterList = oList.filter(filterTag)
+  if (customTranslate) {
+    const res = await customTranslate(filterList)
+    if (!get(res, 'dataMap') || !get(res, 'zhMap')) {
+      logError('customTranslate must return {dataMap, zhMap}')
+    }
+    return res
+  }
   if (isEmpty(filterList)) {
     return {
       dataMap: {},
@@ -636,9 +700,10 @@ async function translateByEngine(filterList, pathname, secret, namespace, autoNa
   })
   const TWList = res2.TargetTextList.map(trimKey)
   const namePre = getNamePre(namespace, pathname, autoNamespace, code)
-  let dataMap = Object.fromEntries(filterList.map((i, m) => {
+
+  dataMap = Object.fromEntries(filterList.map((i, m) => {
     const enName = enList[m]
-    const name = sentenceToWord(enName)
+    const name = sentenceToWord(enName, true)
     const TWName = TWList[m]
     return [
       `${namePre}.${name}`.replace(/'/g, ''),
@@ -649,38 +714,13 @@ async function translateByEngine(filterList, pathname, secret, namespace, autoNa
       }
     ]
   }))
-  let zhMap = Object.fromEntries(filterList.map((i, m) => {
-    const name = sentenceToWord(enList[m])
+  zhMap = Object.fromEntries(filterList.map((i, m) => {
+    const name = sentenceToWord(enList[m], true)
     return [
       i,
       `${namePre}.${name}`.replace(/'/g, ''),
     ]
   }))
-
-  if (filterList.length > Object.keys(dataMap).length) {
-    logSuccess('需要完整的名称')
-    dataMap = Object.fromEntries(filterList.map((i, m) => {
-      const enName = enList[m]
-      const name = sentenceToWord(enName, true)
-      const TWName = TWList[m]
-      return [
-        `${namePre}.${name}`.replace(/'/g, ''),
-        {
-          zh: i.replace(/'/g, ''),
-          en: enName.replace(/'/g, ''),
-          "zh-Hant": TWName.replace(/'/g, '')
-        }
-      ]
-    }))
-    zhMap = Object.fromEntries(filterList.map((i, m) => {
-      const name = sentenceToWord(enList[m], true)
-      return [
-        i,
-        `${namePre}.${name}`.replace(/'/g, ''),
-      ]
-    }))
-  }
-
   return {
     dataMap,
     zhMap
@@ -760,6 +800,159 @@ function addSpaceByLine(code, space = 2, noSpaceIndex) {
   const spaceStr = ' '.repeat(space)
   const spaceCode = codeArr.map((i, m) => `${noSpaceIndex === m ? '' : spaceStr}${i} `).join('\n')
   return spaceCode
+}
+
+/**
+ * @typedef {Object} TranslateConfig
+ * @property {{zh: string, en: string}} i18nDir 项目i18n中英文目录
+ * @property {boolean} scriptFirst 组合的时候script在最上面
+ */
+
+/**
+ * @typedef {Object} RetranslateOptions
+ * @property {string} [ctx] 文件内容
+ * @property {TranslateConfig} translateConfig 文件配置
+ * @property {string} pathname 文件路径
+ */
+
+/**
+ * 把翻译后的改成中文, 以便后续重新翻译
+ */
+class Retranslate {
+  async getInstance(options) {
+    if (!Retranslate.instance) {
+      Retranslate.instance = new Retranslate(options)
+    }
+    const newCode = await Retranslate.instance.replaceI18nToZh()
+    return newCode
+  }
+  /**
+   * 构造函数
+   * @param {RetranslateOptions} options 
+   */
+  constructor(options) {
+    this.options = options
+  }
+
+  /**
+ * 检查给定的字符串是否包含 i18n 翻译函数调用
+ * 该函数使用正则表达式来匹配 't(' 或 '$t(' 开头，后跟任意字符，再以 ')' 结尾的模式
+ * @param {string} str - 要检查的字符串
+ * @returns {boolean} - 如果字符串包含 i18n 翻译函数调用，则返回 true，否则返回 false
+ */
+  containsI18nTranslation(str) {
+    // 正则表达式模式，匹配 't(' 或 '$t(' 开头，后跟任意字符，再以 ')' 结尾
+    const regex = /t\(['"](.*?)['"]\)|$t\(['"](.*?)['"]\)/;
+
+    // 使用 test 方法检查字符串是否匹配正则表达式
+    return regex.test(str);
+  }
+
+  translateI18nToZh(str) {
+    const translationMap = this.getTranslateMap()
+    const regex = /\{\{ t\('([^']*)'\) \}\}/gm;
+    const lineRegex = /t\(['"](.*?)['"]\)/gm
+
+    const hasTernaryOperator = str.includes('?') && str.includes(':')
+    const oStr = str.replace(regex, (match, key) => {
+      return hasTernaryOperator ? `"${get(translationMap, `zh.${key}`) || match}"` : get(translationMap, `zh.${key}`) || match;
+    })
+    const replaceStr = hasTernaryOperator ? oStr : oStr.replace(/:/gm, '')
+
+    return str.includes('t(') ?
+      replaceStr
+        .replace(lineRegex, (match, key) => {
+          return hasTernaryOperator ? `"${get(translationMap, `zh.${key}`) || match}"` : get(translationMap, `zh.${key}`) || match;
+        }) :
+      str;
+  }
+
+  getTranslateMap() {
+    const { zh: zhDir, en: enDir } = this.options.translateConfig.i18nDir
+    return {
+      zh: JSON.parse(fs.readFileSync(zhDir, 'utf8')),
+      en: JSON.parse(fs.readFileSync(enDir, 'utf8'))
+    }
+  }
+
+  async replaceI18nToZh() {
+    const _this = this
+    const source = compiler.parse(this.options.ctx)
+    const { script, scriptSetup, filename, styles } = source.descriptor
+    const tplCode = get(source.descriptor, 'template.content', '')
+    const js = (scriptSetup ? (scriptSetup || {}).content : (script || {}).content) || ''
+    const { ast } = compiler.compileTemplate({
+      source: `<template>${tplCode}</template>`,
+      id: uuid.v1(),
+      filename
+    })
+    const jsAst = js ? parser.parse(js, {
+      plugins: ["jsx", "typescript"],
+      sourceType: "module",
+    }) : {}
+
+    traverseAST(ast, (node) => {
+      if (this.containsI18nTranslation(get(node, 'exp.loc.source', '')) && node.rawName) {
+        set(node, 'rawName', node.rawName.replace(':', ''))
+        set(node, 'exp.loc.source', this.translateI18nToZh(get(node, 'exp.loc.source', '')))
+      }
+      if (get(node, 'loc.source', '')) {
+        set(node, 'loc.source', this.translateI18nToZh(get(node, 'loc.source', '')))
+      }
+    })
+    const newTpl = vue3AstToTpl(ast)
+    if (!isEmpty(jsAst)) {
+      traverse(jsAst, {
+        enter(path) {
+          let val = ''
+          if (typeof path.node.value === 'string') {
+            val = path.node.value
+          } else if (get(path, 'node.value.raw')) {
+            val = get(path, 'node.value.raw')
+          }
+
+          if (!val) {
+            return
+          }
+          if (!val.includes('common.')) {
+            return
+          }
+          const zhMap = _this.getTranslateMap().zh
+          path.node.extra.raw = `'${get(zhMap, val, val)}'`
+
+          if (path.node.name === 't') {
+            path.node.name = ''
+          } else if (get(path, 'node.value.name') === 't') {
+            path.node.value.name = ''
+          }
+        }
+      })
+    }
+    const newJs = this.getReplaceJSCtx(generate(jsAst).code)
+    const newCode = getNewCode(newTpl, newJs, styles, this.options.ctx, this.options.translateConfig.scriptFirst)
+    // await this.writeFile(newCode)
+    logSuccess(`${this.options.pathname}已提取翻译前的文案内容`)
+    return newCode
+  }
+
+  getReplaceJSCtx(str) {
+    return str.replace(/(?<![a-zA-Z])\bt\('([^']*)'\)/g, function replaceT(_, p1) {
+      return `'${p1}'`;
+    })
+  }
+
+  async writeFile(newCode) {
+    const pathname = this.options.pathname
+    fs.writeFileSync(pathname, newCode, 'utf-8')
+    const { hasPrettierConfig, prettierConfigPath } = getPrettierConfig()
+    if (hasPrettierConfig) {
+      shelljs.exec(`npx prettier --config ${prettierConfigPath} --write ${pathname}`, { silent: true })
+    } else {
+      shelljs.exec(`npx prettier --write ${pathname}`, { silent: true })
+    }
+    await sleep(500)
+    logSuccess(`${pathname}写入翻译前的文案内容`)
+  }
 }
 
 
